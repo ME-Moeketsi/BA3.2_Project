@@ -1,0 +1,9 @@
+pandas
+numpy
+scikit-learn
+statsmodels
+joblib
+openpyxl
+faster-whisper
+PyAudio
+pyttsx3
