@@ -32,6 +32,7 @@ Uses emergency patient data to analyse patient characteristics and predict the a
 Uses hospital simulation data to analyse operational conditions and predict hospital performance outcomes such as waiting times.
 
 **Algorithm:** Random Forest Regressor
+
 **Target:** `Hospital_Performance`
 
 **Key operational factors:**
