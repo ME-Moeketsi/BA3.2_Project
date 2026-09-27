@@ -1,10 +1,10 @@
 # Predict-Care AI
 <div align="Center">
 
-![Institutional Project](https://img.shields.io/badge/Institution-Vaal%20University%20of%20Technology-blue?style=for-the-badge&logo=codeforces&logoColor=white)
+![Institutional Project:](https://img.shields.io/badge/Institution-Vaal%20University%20of%20Technology-blue?style=for-the-badge&logo=codeforces&logoColor=white)
 ![Academic Year](https://img.shields.io/badge/3rd%20Year%20IT-orange?style=for-the-badge)
 ![Project Status](https://img.shields.io/badge/In%20Development-success?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
+![License:](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
 
 </div>
 

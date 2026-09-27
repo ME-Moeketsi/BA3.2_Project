@@ -7,3 +7,6 @@ openpyxl
 faster-whisper
 PyAudio
 pyttsx3
+keras
+torch
+matplotlib
