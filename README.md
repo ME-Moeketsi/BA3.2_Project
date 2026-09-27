@@ -32,6 +32,7 @@ Uses emergency patient data to analyse patient characteristics and predict the a
 Uses hospital simulation data to analyse operational conditions and predict hospital performance outcomes such as waiting times.
 
 **Algorithm:** Random Forest Regressor
+**Target:** `Hospital_Performance`
 
 **Key operational factors:**
 
@@ -55,9 +56,13 @@ Used for patient and triage analysis.
 
 The dataset contains emergency-department patient information including demographic information, arrival details, pain, vital signs, injury, mental state, and triage classifications.
 
+*link:* [Emergency Service Triage Dataset.](https://www.kaggle.com/datasets/ilkeryildiz/emergency-service-triage-application)
+
 ### Hospital Simulation Dataset
 
 Used for analysing hospital operations under different scenarios, including peak arrival conditions, staffing levels, patient priority, service times, and waiting times.
+
+*link:* [Hospital Simulation Dataset.](https://www.kaggle.com/datasets/juneminazuki/hospital-queue-and-patient-flow-simulation)
 
 ## System Concept
 
