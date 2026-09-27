@@ -1,4 +1,12 @@
 # Predict-Care AI
+<div align="Center">
+
+![Institutional Project](https://img.shields.io/badge/Institution-Vaal%20University%20of%20Technology-blue?style=for-the-badge&logo=codeforces&logoColor=white)
+![Academic Year](https://img.shields.io/badge/3rd%20Year%20IT-orange?style=for-the-badge)
+![Project Status](https://img.shields.io/badge/In%20Development-success?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
+
+</div>
 
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
 
@@ -86,6 +94,10 @@ Healthcare Staff
 ```
 
 ## Technologies
+
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=white)
+![Git](https://img.shields.io/badge/git-%23F05033.svg?style=for-the-badge&logo=git&logoColor=white)
+![VS Code](https://img.shields.io/badge/VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white)
 
 * Python
 * Pandas
