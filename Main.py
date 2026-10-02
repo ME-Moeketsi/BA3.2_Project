@@ -17,6 +17,9 @@ The project contains:
 
 The Deep Learning model is kept separate from the
 traditional Machine Learning models.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
 """
 
 

@@ -11,6 +11,9 @@ scenario and asking the model to predict those observations.
 
 This avoids treating the end of the simulation as normal
 future patient demand.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
 """
 
 # Here I am importing the tools I need for my time-series analysis.

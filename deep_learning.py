@@ -13,6 +13,9 @@ separately in healthcare_ai.py using Random Forest.
 
 The purpose of this file is to provide a separate
 Deep Learning approach for the project.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
 """
 
 import os

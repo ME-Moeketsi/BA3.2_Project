@@ -17,6 +17,9 @@ I am using two different datasets:
 
 The two datasets are kept separate because they represent
 different healthcare problems and have different targets.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
 """
 
 # Here I am importing the tools I need for my AI system.
