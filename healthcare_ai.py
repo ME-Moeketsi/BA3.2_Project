@@ -1,172 +1,200 @@
-# IMPORTS
+"""
+Predict-Care AI
+AI/ML Component
 
-# Here I am importing the operating-system module because
-# I will use it to create and manage my project directories.
+This file contains the machine-learning components of my
+Predict-Care AI healthcare decision-support system.
+
+I am using two different datasets:
+
+1. Emergency triage dataset
+   - Predicts KTAS expert triage level
+   - Random Forest Classifier
+
+2. Hospital patient-flow dataset
+   - Predicts doctor waiting time
+   - Random Forest Regressor
+
+The two datasets are kept separate because they represent
+different healthcare problems and have different targets.
+"""
+
+# Here I am importing the tools I need for my AI system.
 import os
-
-# Here I am importing joblib because I will use it to save
-# and load my trained machine-learning model and scaler.
 import joblib
-
-# Here I am importing NumPy because I will need it for
-# numerical operations during machine-learning processing.
 import numpy as np
-
-# Here I am importing pandas because I will use it to
-# load, clean, explore, and manipulate my dataset.
 import pandas as pd
 
-# Here I am importing train_test_split because I will use it
-# to divide my dataset into training and testing data.
+# Here I am importing tools that help me split and prepare my data.
 from sklearn.model_selection import train_test_split
-
-# Here I am importing StandardScaler because I will use it
-# to scale my numerical features before making predictions.
 from sklearn.preprocessing import StandardScaler
 
-# Here I am importing classification metrics because I will
-# use them to evaluate how well my triage(for now) model performs.
-from sklearn.metrics import (accuracy_score,classification_report,confusion_matrix)
+# Here I am importing the measurements I will use to evaluate my models.
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
+)
 
-# Here I am importing RandomForestClassifier because I will
-# use it as my machine-learning algorithm for predicting
-# the patient's KTAS triage category.
-from sklearn.ensemble import RandomForestClassifier
+# Here I am importing the two Random Forest algorithms.
+# The classifier predicts categories.
+# The regressor predicts numerical values.
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    RandomForestRegressor
+)
 
-# CONFIGURATION
 
-# Here I am defining the directory where I will keep my
-# healthcare datasets.
-DATA_DIR = "Data"
+# ============================================================
+# PROJECT CONFIGURATION
+# ============================================================
 
-# Here I am defining the directory where I will save
-# my trained machine-learning models.
+# Here I am defining where my datasets are stored.
+DATA_DIR = "data"
+
+# Here I am defining where my trained models will be saved.
 MODEL_DIR = "Models"
 
-# Here I am defining the location of my emergency triage
-# dataset.
-DATASET_FILE = os.path.join(DATA_DIR, "data.csv")
+# Dataset 1: emergency triage data.
+TRIAGE_DATASET = os.path.join(
+    DATA_DIR,
+    "ktas_cleaned.csv"
+)
 
-# Here I am defining the location where I will save
-# my trained triage classification model.
-TRIAGE_MODEL_FILE = os.path.join(MODEL_DIR,"triage_model.pkl")
+# Dataset 2: hospital patient-flow simulation data.
+FLOW_DATASET = os.path.join(
+    DATA_DIR,
+    "patient_flow_cleaned.csv"
+)
 
-# Here I am defining the location where I will save
-# my feature scaler.
-TRIAGE_SCALER_FILE = os.path.join(MODEL_DIR,"triage_scaler.pkl")
+# Here I am defining where I will save my trained models.
+TRIAGE_MODEL_FILE = os.path.join(
+    MODEL_DIR,
+    "triage_model.pkl"
+)
 
-# DIRECTORY MANAGEMENT
+FLOW_MODEL_FILE = os.path.join(
+    MODEL_DIR,
+    "patient_flow_model.pkl"
+)
+
+# These files store the preprocessing information used by
+# each model when making future predictions.
+TRIAGE_PREPROCESSOR_FILE = os.path.join(
+    MODEL_DIR,
+    "triage_preprocessor.pkl"
+)
+
+FLOW_PREPROCESSOR_FILE = os.path.join(
+    MODEL_DIR,
+    "patient_flow_preprocessor.pkl"
+)
+
+
+# ============================================================
+# DIRECTORY SETUP
+# ============================================================
 
 def create_directories():
     """
-    Here I am creating the directories that I need
-    for my dataset and trained model files.
+    Create the folders required by the project.
     """
 
-    # Here I am creating the data directory if it
-    # does not already exist.
+    # Here I am making sure my data and model folders exist.
     os.makedirs(DATA_DIR, exist_ok=True)
-
-    # Here I am creating the models directory if it
-    # does not already exist.
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     print("Project directories are ready.")
 
-# DATA LOADING
 
-def load_dataset(file_path=DATASET_FILE):
+# ============================================================
+# DATASET 1 - EMERGENCY TRIAGE
+# ============================================================
+
+def load_triage_dataset():
     """
-    Here I am loading my emergency triage dataset.
-
-    The Kaggle dataset uses a semicolon as its separator
-    and uses cp1254 encoding.
+    Load the emergency triage dataset.
     """
 
-    # Here I am loading my CSV file into a pandas DataFrame.
+    if not os.path.exists(TRIAGE_DATASET):
+        raise FileNotFoundError(
+            f"Triage dataset not found: {TRIAGE_DATASET}"
+        )
+
+    # The Kaggle triage dataset uses a semicolon delimiter
+    # and cp1254 encoding.
+    
     data = pd.read_csv(
-        file_path,
-        sep=";",
-        encoding="cp1254"
+        TRIAGE_DATASET
     )
 
-    print("\nDataset loaded successfully.")
-    print(f"Rows: {data.shape[0]}")
-    print(f"Columns: {data.shape[1]}")
+    print("\n========== TRIAGE DATASET ==========")
+    print(f"Records: {len(data)}")
+    print(f"Columns: {len(data.columns)}")
 
     return data
 
-# DATASET EXPLORATION
 
-def explore_dataset(data):
+def preprocess_triage_data(data):
     """
-    Here I am exploring my dataset so that I can understand
-    its structure, columns, data types, missing values,
-    and basic statistics before training my model.
+    Clean the emergency triage dataset.
     """
 
-    print("\n===== DATASET COLUMNS =====")
-    print(data.columns.tolist())
-
-    print("\n===== FIRST 5 RECORDS =====")
-    print(data.head())
-
-    print("\n===== DATASET INFORMATION =====")
-    print(data.info())
-
-    print("\n===== MISSING VALUES =====")
-    print(data.isnull().sum())
-
-    print("\n===== DATASET STATISTICS =====")
-    print(data.describe(include="all"))
-
-# DATA PREPROCESSING
-
-
-def preprocess_data(data):
-    """
-    Here I am cleaning and preparing my dataset before
-    I use it for machine learning.
-    """
-
-    # Here I am creating a copy so that I do not
-    # accidentally modify my original dataset.
+    # Here I am making a copy so that I do not modify
+    # the original dataset.
     data = data.copy()
 
-    # Here I am removing duplicate records because
-    # duplicate patient records could affect my model.
+    # Here I am removing duplicate records.
     data = data.drop_duplicates()
 
-    # Here I am checking numeric columns and filling
-    # missing numeric values with their median values.
-    numeric_columns = data.select_dtypes(include=np.number).columns
+    # Here I am filling missing numerical values
+    # using the median of each column.
+    numeric_columns = data.select_dtypes(
+        include=np.number
+    ).columns
 
     for column in numeric_columns:
-        data[column] = data[column].fillna(data[column].median())
+        data[column] = data[column].fillna(
+            data[column].median()
+        )
 
-    print("\nData preprocessing completed.")
-    print(f"Rows after preprocessing: {len(data)}")
+    # Here I am filling missing text values.
+    text_columns = data.select_dtypes(
+        exclude=np.number
+    ).columns
+
+    for column in text_columns:
+        data[column] = data[column].fillna(
+            "Unknown"
+        )
+
+    print(
+        f"Triage records after preprocessing: {len(data)}"
+    )
 
     return data
 
-# PREPARE DATA FOR MACHINE LEARNING
 
-def prepare_triage_data(data, target_column="KTAS_expert", test_size=0.2):
+def prepare_triage_data(data, test_size=0.20):
     """
-    Here I am preparing my emergency triage data for
-    classification.
+    Prepare data for KTAS expert-level classification.
 
-    My target is KTAS_expert because I want my model
-    to predict the triage category.
+    Target:
+        KTAS_expert
     """
 
-    # Here I am checking that my target column exists
-    # before I continue with model preparation.
+    target_column = "KTAS_expert"
+
     if target_column not in data.columns:
-        raise ValueError(f"Target column '{target_column}' was not found.")
+        raise ValueError(
+            f"'{target_column}' was not found in the triage dataset."
+        )
 
-    # Here I am defining the features that I want
-    # my model to use for triage prediction.
+    # These are the patient features I will initially use.
+    # I deliberately avoid post-triage information.
     feature_columns = [
         "Age",
         "Arrival mode",
@@ -178,11 +206,11 @@ def prepare_triage_data(data, target_column="KTAS_expert", test_size=0.2):
         "DBP",
         "HR",
         "RR",
-        "BT"
+        "BT",
+        "Saturation"
     ]
 
-    # Here I am checking that all my selected features
-    # exist in the dataset.
+    # I check that all the features exist before continuing.
     missing_features = [
         column
         for column in feature_columns
@@ -190,17 +218,18 @@ def prepare_triage_data(data, target_column="KTAS_expert", test_size=0.2):
     ]
 
     if missing_features:
-        raise ValueError(f"Missing feature columns: {missing_features}")
+        raise ValueError(
+            f"Missing triage features: {missing_features}"
+        )
 
-    # Here I am selecting my input features.
+    # Here I select only the features needed by my model.
     X = data[feature_columns].copy()
 
-    # Here I am selecting KTAS_expert as my target.
+    # This is what my model is learning to predict.
     y = data[target_column].copy()
 
-    # Here I am converting categorical feature values
-    # into numerical values so that my machine-learning
-    # algorithm can process them.
+    # Here I convert categorical patient information
+    # into numerical columns that the Random Forest can use.
     X = pd.get_dummies(
         X,
         columns=[
@@ -209,11 +238,16 @@ def prepare_triage_data(data, target_column="KTAS_expert", test_size=0.2):
             "Mental",
             "Pain"
         ],
-        drop_first=False
+        dtype=int
     )
 
-    # Here I am splitting my data into training and
-    # testing portions.
+    # I save the final feature names so that future
+    # predictions use exactly the same structure.
+    final_feature_columns = X.columns.tolist()
+
+    # Here I split the data into training and testing data.
+    # Stratification helps keep the KTAS class distribution
+    # similar between training and testing.
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -222,198 +256,424 @@ def prepare_triage_data(data, target_column="KTAS_expert", test_size=0.2):
         stratify=y
     )
 
-    # Here I am creating a scaler for my numerical features.
+    # Here I scale the numerical values.
     scaler = StandardScaler()
 
-    # Here I am scaling my training data.
-    X_train = scaler.fit_transform(X_train)
+    X_train_scaled = scaler.fit_transform(
+        X_train
+    )
 
-    # Here I am using the same scaler to transform
-    # my testing data.
-    X_test = scaler.transform(X_test)
+    X_test_scaled = scaler.transform(
+        X_test
+    )
 
-    print("\nTriage data preparation completed.")
+    print("\nTriage data prepared.")
     print(f"Training records: {len(X_train)}")
     print(f"Testing records: {len(X_test)}")
-    print(f"Number of features: {X_train.shape[1]}")
+    print(f"Features used: {len(final_feature_columns)}")
 
     return (
-        X_train,
-        X_test,
+        X_train_scaled,
+        X_test_scaled,
         y_train,
         y_test,
-        scaler
+        scaler,
+        final_feature_columns
     )
-    
-# TRAIN TRIAGE CLASSIFIER
 
 
 def train_triage_model(X_train, y_train):
     """
-    Here I am training my Random Forest classification
-    model to predict the KTAS triage category.
+    Train the Random Forest classification model.
     """
 
-    # Here I am creating my Random Forest classifier.
-    model = RandomForestClassifier(n_estimators=100,random_state=42)
+    # Here I create a Random Forest made up of many
+    # decision trees to classify the patient's KTAS level.
+    model = RandomForestClassifier(
+        n_estimators=200,
+        random_state=42,
+        class_weight="balanced"
+    )
 
-    # Here I am training my model using my training data.
-    model.fit(X_train, y_train)
+    # Here the model learns patterns from the training data.
+    model.fit(
+        X_train,
+        y_train
+    )
 
     print("\nTriage classification model trained.")
 
     return model
 
-# EVALUATE TRIAGE MODEL
 
 def evaluate_triage_model(model, X_test, y_test):
     """
-    Here I am evaluating my triage model to determine
-    how accurately it predicts the KTAS category.
+    Evaluate the triage classification model.
     """
 
-    # Here I am using my trained model to predict
-    # the KTAS categories for my test data.
+    # Here I ask my trained model to predict the
+    # KTAS level for patients it has not seen during training.
     predictions = model.predict(X_test)
 
-    # Here I am calculating the overall accuracy
-    # of my classification model.
     accuracy = accuracy_score(
         y_test,
         predictions
     )
 
-    print("\n===== TRIAGE MODEL EVALUATION =====")
-    print(f"Accuracy: {accuracy:.4f}")
+    print("\n========== TRIAGE MODEL EVALUATION ==========")
 
-    # Here I am displaying precision, recall, and F1-score
-    # for each KTAS category.
+    print(
+        f"Accuracy: {accuracy:.4f}"
+    )
+
     print("\nClassification Report:")
     print(
-        classification_report(y_test,predictions)
+        classification_report(
+            y_test,
+            predictions,
+            zero_division=0
+        )
     )
 
-    # Here I am displaying the confusion matrix so that
-    # I can see how my model is confusing different
-    # KTAS categories.
     print("\nConfusion Matrix:")
     print(
-        confusion_matrix(y_test,predictions)
+        confusion_matrix(
+            y_test,
+            predictions
+        )
     )
 
-    return predictions
+    return {
+        "accuracy": accuracy,
+        "predictions": predictions
+    }
 
-# MAKE TRIAGE PREDICTION
 
-def make_triage_prediction(
+# ============================================================
+# DATASET 2 - HOSPITAL PATIENT FLOW
+# ============================================================
+
+def load_patient_flow_dataset():
+    """
+    Load the hospital patient-flow dataset.
+    """
+
+    if not os.path.exists(FLOW_DATASET):
+        raise FileNotFoundError(
+            f"Patient-flow dataset not found: {FLOW_DATASET}"
+        )
+
+    data = pd.read_csv(
+        FLOW_DATASET
+    )
+
+    print("\n========== PATIENT FLOW DATASET ==========")
+    print(f"Records: {len(data)}")
+    print(f"Columns: {len(data.columns)}")
+
+    return data
+
+
+def preprocess_patient_flow_data(data):
+    """
+    Clean the hospital patient-flow dataset.
+    """
+
+    # Here I make a copy so the original dataset remains unchanged.
+    data = data.copy()
+
+    # Here I remove duplicate records.
+    data = data.drop_duplicates()
+
+    # Here I fill missing numerical values with the median.
+    numeric_columns = data.select_dtypes(
+        include=np.number
+    ).columns
+
+    for column in numeric_columns:
+        data[column] = data[column].fillna(
+            data[column].median()
+        )
+
+    print(
+        f"Patient-flow records after preprocessing: {len(data)}"
+    )
+
+    return data
+
+
+def prepare_patient_flow_data(data, test_size=0.20):
+    """
+    Prepare the hospital patient-flow data.
+
+    Target:
+        DocWaitTime
+    """
+
+    target_column = "doc_wait_min"
+
+    if target_column not in data.columns:
+        raise ValueError(
+            f"'{target_column}' was not found in the patient-flow dataset."
+        )
+
+    # These are the operational features I will use.
+    # I intentionally do not use IDs or the target itself.
+    feature_columns = [
+        "priority_level",
+        "IsPeakArrival",
+        "num_doctors",
+        "PeakLimit"
+    ]
+
+    missing_features = [
+        column
+        for column in feature_columns
+        if column not in data.columns
+    ]
+
+    if missing_features:
+        raise ValueError(
+            f"Missing patient-flow features: {missing_features}"
+        )
+
+    # Here I select the operational information that
+    # can help predict doctor waiting time.
+    X = data[feature_columns].copy()
+
+    # This is the numerical value my model will predict.
+    y = data[target_column].copy()
+
+    # Here I split the dataset into training and testing data.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=42
+    )
+
+    # Here I scale the numerical features.
+    scaler = StandardScaler()
+
+    X_train_scaled = scaler.fit_transform(
+        X_train
+    )
+
+    X_test_scaled = scaler.transform(
+        X_test
+    )
+
+    print("\nPatient-flow data prepared.")
+    print(f"Training records: {len(X_train)}")
+    print(f"Testing records: {len(X_test)}")
+    print(f"Features used: {len(feature_columns)}")
+
+    return (
+        X_train_scaled,
+        X_test_scaled,
+        y_train,
+        y_test,
+        scaler,
+        feature_columns
+    )
+
+
+def train_patient_flow_model(X_train, y_train):
+    """
+    Train the Random Forest regression model.
+    """
+
+    # Here I create a Random Forest regressor because
+    # doctor waiting time is a numerical value.
+    model = RandomForestRegressor(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    # Here the model learns the relationship between
+    # hospital conditions and doctor waiting time.
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    print("\nPatient-flow regression model trained.")
+
+    return model
+
+
+def evaluate_patient_flow_model(
     model,
-    scaler,
-    input_data,
-    feature_columns
+    X_test,
+    y_test
 ):
     """
-    Here I am using my trained model to predict the
-    KTAS category for new patient information.
+    Evaluate the patient-flow regression model.
     """
 
-    # Here I am converting the new patient information
-    # into a pandas DataFrame.
-    input_df = pd.DataFrame(
-        [input_data]
+    # Here I ask my trained model to predict waiting times
+    # for patients it did not see during training.
+    predictions = model.predict(X_test)
+
+    # MAE tells me the average size of the prediction error.
+    mae = mean_absolute_error(
+        y_test,
+        predictions
     )
 
-    # Here I am converting categorical values into the
-    # same numerical format used during model training.
-    input_df = pd.get_dummies(
-        input_df,
-        columns=[
-            "Arrival mode",
-            "Injury",
-            "Mental",
-            "Pain"
-        ],
-        drop_first=False
+    # RMSE gives more weight to larger prediction errors.
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_test,
+            predictions
+        )
     )
 
-    # Here I am making sure the new patient data has
-    # the same feature structure expected by my model.
-    input_df = input_df.reindex(
-        columns=feature_columns,
-        fill_value=0
+    # R-squared tells me how much variation in the target
+    # is explained by the model.
+    r2 = r2_score(
+        y_test,
+        predictions
     )
 
-    # Here I am scaling the new patient information
-    # using the scaler that I fitted during training.
-    input_scaled = scaler.transform(
-        input_df
+    print("\n========== PATIENT FLOW MODEL EVALUATION ==========")
+
+    print(
+        f"MAE: {mae:.4f}"
     )
 
-    # Here I am asking my trained model to predict
-    # the patient's KTAS category.
-    prediction = model.predict(
-        input_scaled
+    print(
+        f"RMSE: {rmse:.4f}"
     )
 
-    return prediction[0]
+    print(
+        f"R²: {r2:.4f}"
+    )
 
-# SAVE MODEL
+    return {
+        "mae": mae,
+        "rmse": rmse,
+        "r2": r2,
+        "predictions": predictions
+    }
+
+
+# ============================================================
+# MODEL SAVING
+# ============================================================
 
 def save_triage_model(
     model,
-    scaler
+    scaler,
+    feature_columns
 ):
     """
-    Here I am saving my trained triage model and scaler
-    so that I can use them later without retraining.
+    Save the triage model and its preprocessing information.
     """
 
-    # Here I am saving my trained classification model.
-    joblib.dump(model,TRIAGE_MODEL_FILE)
+    package = {
+        "model": model,
+        "scaler": scaler,
+        "feature_columns": feature_columns
+    }
 
-    # Here I am saving my feature scaler.
-    joblib.dump(scaler,TRIAGE_SCALER_FILE)
+    joblib.dump(
+        package,
+        TRIAGE_MODEL_FILE
+    )
 
-    print("\nTriage model saved successfully.")
-    print(f"Model: {TRIAGE_MODEL_FILE}")
-    print(f"Scaler: {TRIAGE_SCALER_FILE}")
+    print(
+        f"\nTriage model saved to: {TRIAGE_MODEL_FILE}"
+    )
 
-# LOAD MODEL
+
+def save_patient_flow_model(
+    model,
+    scaler,
+    feature_columns
+):
+    """
+    Save the patient-flow model and preprocessing information.
+    """
+
+    package = {
+        "model": model,
+        "scaler": scaler,
+        "feature_columns": feature_columns
+    }
+
+    joblib.dump(
+        package,
+        FLOW_MODEL_FILE
+    )
+
+    print(
+        f"Patient-flow model saved to: {FLOW_MODEL_FILE}"
+    )
+
+
+# ============================================================
+# MODEL LOADING
+# ============================================================
 
 def load_triage_model():
     """
-    Here I am loading my previously trained triage model
-    and scaler so that I can use them for predictions.
+    Load the saved triage model.
     """
 
-    # Here I am loading my saved Random Forest model.
-    model = joblib.load(TRIAGE_MODEL_FILE)
+    if not os.path.exists(TRIAGE_MODEL_FILE):
+        raise FileNotFoundError(
+            "Saved triage model was not found."
+        )
 
-    # Here I am loading my saved feature scaler.
-    scaler = joblib.load(TRIAGE_SCALER_FILE)
+    package = joblib.load(
+        TRIAGE_MODEL_FILE
+    )
 
-    print("\nTriage model loaded successfully.")
+    return package
 
-    return model, scaler
 
+def load_patient_flow_model():
+    """
+    Load the saved patient-flow model.
+    """
+
+    if not os.path.exists(FLOW_MODEL_FILE):
+        raise FileNotFoundError(
+            "Saved patient-flow model was not found."
+        )
+
+    package = joblib.load(
+        FLOW_MODEL_FILE
+    )
+
+    return package
+
+
+# ============================================================
 # SYSTEM STATUS
+# ============================================================
 
 def system_status():
     """
-    Here I am displaying the current status of the
-    Predict-Care AI machine-learning component.
+    Display the current status of the Predict-Care AI system.
     """
-    
-    print("\n========================PREDICT-CARE AI=========================")
-    print("Healthcare ML Component")
-    print("-----------------------------------")
-    print("Triage Classification: READY")
-    print("Random Forest Classifier: READY")
-    print("Model Evaluation: READY")
-    print("Prediction: READY")
-    print("Model Saving/Loading: READY")
-    print("-----------------------------------")
-    print("Hospital Simulation Model: NOT ADDED YET")
-    print("===================================")
-    
-    ## The rest will come here however i am gonna make them a separate module for now because this is already 
-    # getting too long and i want to keep it clean and organized.
+
+    print("\n========== PREDICT-CARE AI STATUS ==========")
+
+    print("Triage Classification       : READY")
+    print("Patient Flow Regression     : READY")
+    print("Model Evaluation            : READY")
+    print("Prediction                  : READY")
+    print("Model Saving                : READY")
+    print("Model Loading               : READY")
+
+    print("\nAdditional project components:")
+    print("Time-Series Analysis        : READY")
+    print("Speech Recognition          : SEPARATE MODULE")
+    print("Text-to-Speech              : SEPARATE MODULE")
+    print("Local LLM / Chatbot         : SEPARATE MODULE")
+    print("Deep Learning               : READY")
+
+    print("============================================\n")
