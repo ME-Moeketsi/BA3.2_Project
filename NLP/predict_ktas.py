@@ -1,30 +1,27 @@
 import joblib
 from nlp_preprocessing import clean_text
 
-# --------------------------------------------------
-# LOAD SAVED MODEL AND TF-IDF VECTORIZER
-# --------------------------------------------------
+
+# ----- LOAD SAVED MODEL AND TF-IDF VECTORIZER -----
 
 model = joblib.load("Models/ktas_nlp_model.pkl")
 tfidf = joblib.load("Models/ktas_tfidf_vectorizer.pkl")
 
 
-# --------------------------------------------------
-# PREDICTION FUNCTION
-# --------------------------------------------------
+# ----- PREDICTION FUNCTION -----
 
 def predict_ktas(chief_complaint):
 
-    # Clean the patient's chief complaint
+    # Clean the chief complaint
     cleaned_complaint = clean_text(chief_complaint)
 
-    # Convert the cleaned complaint into TF-IDF features
+    # Convert complaint into TF-IDF features
     complaint_tfidf = tfidf.transform([cleaned_complaint])
 
-    # Predict KTAS level
+    # Predict the KTAS level
     predicted_ktas = int(model.predict(complaint_tfidf)[0])
 
-    # Convert KTAS level into emergency category
+    # Determine the emergency category
     if predicted_ktas <= 3:
         emergency_category = "Emergency"
     else:
@@ -33,9 +30,7 @@ def predict_ktas(chief_complaint):
     return predicted_ktas, emergency_category
 
 
-# --------------------------------------------------
-# USER INPUT
-# --------------------------------------------------
+# ----- GET USER INPUT -----
 
 print("\nPREDICT-CARE AI")
 print("NLP Patient Triage Support")
@@ -46,18 +41,14 @@ chief_complaint = input(
 )
 
 
-# --------------------------------------------------
-# MAKE PREDICTION
-# --------------------------------------------------
+# ----- MAKE PREDICTION -----
 
 predicted_ktas, emergency_category = predict_ktas(
     chief_complaint
 )
 
 
-# --------------------------------------------------
-# DISPLAY RESULT
-# --------------------------------------------------
+# ----- DISPLAY RESULT -----
 
 print("\nPREDICTION RESULT")
 print("-----------------")

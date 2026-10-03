@@ -12,29 +12,27 @@ from sklearn.metrics import (
 )
 
 from nlp_preprocessing import clean_text
-# --------------------------------------------------
-# LOAD DATA
-# --------------------------------------------------
+
+
+# ----- LOAD DATASET -----
 
 df = pd.read_csv("Data/ktas_cleaned.csv")
 
-# Remove records without a usable chief complaint
+# Remove missing chief complaints
 df = df[
     df["Chief_complain"].astype(str).str.strip().str.upper() != "MISSING"
 ].copy()
 
 df["cleaned_complaint"] = df["Chief_complain"].apply(clean_text)
-# --------------------------------------------------
-# DEFINE INPUT AND TARGET
-# --------------------------------------------------
+
+
+# ----- SET INPUT AND TARGET -----
 
 X = df["cleaned_complaint"]
 y = df["KTAS_expert"]
 
 
-# --------------------------------------------------
-# RECREATE SAME TRAIN / TEST SPLIT
-# --------------------------------------------------
+# ----- SPLIT DATA FOR TRAINING AND TESTING -----
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
@@ -45,31 +43,23 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 
-# --------------------------------------------------
-# LOAD TRAINED MODEL AND TF-IDF VECTORIZER
-# --------------------------------------------------
+# ----- LOAD TRAINED MODEL AND TF-IDF VECTORIZER -----
 
 model = joblib.load("Models/ktas_nlp_model.pkl")
 tfidf = joblib.load("Models/ktas_tfidf_vectorizer.pkl")
 
 
-# --------------------------------------------------
-# TRANSFORM TEST COMPLAINTS
-# --------------------------------------------------
+# ----- TRANSFORM TEST COMPLAINTS -----
 
 X_test_tfidf = tfidf.transform(X_test)
 
 
-# --------------------------------------------------
-# MAKE PREDICTIONS
-# --------------------------------------------------
+# ----- MAKE PREDICTIONS -----
 
 y_pred = model.predict(X_test_tfidf)
 
 
-# --------------------------------------------------
-# OVERALL EVALUATION
-# --------------------------------------------------
+# ----- EVALUATE KTAS PREDICTIONS -----
 
 accuracy = accuracy_score(y_test, y_pred)
 
@@ -104,9 +94,7 @@ print(f"Recall:    {recall:.4f}")
 print(f"F1 Score:  {f1:.4f}")
 
 
-# --------------------------------------------------
-# RESULTS FOR EACH KTAS LEVEL
-# --------------------------------------------------
+# ----- RESULTS FOR EACH KTAS LEVEL -----
 
 print("\nClassification Report:")
 print(
@@ -119,9 +107,7 @@ print(
 )
 
 
-# --------------------------------------------------
-# CONFUSION MATRIX
-# --------------------------------------------------
+# ----- KTAS CONFUSION MATRIX -----
 
 print("Confusion Matrix:")
 
@@ -133,21 +119,21 @@ cm = confusion_matrix(
 
 print(cm)
 
-# --------------------------------------------------
-# EMERGENCY / NON-EMERGENCY EVALUATION
-# --------------------------------------------------
 
-# Convert predicted KTAS levels into emergency categories
+# ----- EMERGENCY AND NON-EMERGENCY EVALUATION -----
+
+# Convert KTAS predictions into emergency categories
 predicted_binary = [
     "Emergency" if ktas <= 3 else "Non-Emergency"
     for ktas in y_pred
 ]
 
-# Get the actual emergency categories for the same test records
+# Get the actual emergency categories
 actual_binary = df.loc[y_test.index, "KTAS_binary"]
 
 
-# Calculate binary classification metrics
+# ----- CALCULATE EMERGENCY CATEGORY METRICS -----
+
 binary_accuracy = accuracy_score(
     actual_binary,
     predicted_binary
@@ -195,6 +181,8 @@ print(
     )
 )
 
+
+# ----- EMERGENCY CATEGORY CONFUSION MATRIX -----
 
 print("Emergency Confusion Matrix:")
 

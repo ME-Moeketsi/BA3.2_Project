@@ -6,11 +6,10 @@ def clean_text(text):
     Clean patient chief complaint text before NLP processing.
     """
 
-    # Convert to lowercase
+    # Convert text to lowercase
     text = str(text).lower()
 
     # Remove punctuation and special characters
-    # Keep letters, numbers and spaces
     text = re.sub(r"[^a-z0-9\s]", " ", text)
 
     # Remove extra spaces
@@ -19,7 +18,8 @@ def clean_text(text):
     return text
 
 
-# Test the preprocessing file directly
+# ----- TEST TEXT PREPROCESSING -----
+
 if __name__ == "__main__":
 
     examples = [
@@ -35,5 +35,3 @@ if __name__ == "__main__":
 
     for example in examples:
         print(f"{example} -> {clean_text(example)}")
-
-        

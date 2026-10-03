@@ -5,6 +5,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
+from nlp_preprocessing import clean_text
 
 from sklearn.metrics import (
     accuracy_score,
@@ -16,29 +17,30 @@ from sklearn.metrics import (
 )
 
 
-# --------------------------------------------------
-# LOAD DATA
-# --------------------------------------------------
+
+#------LOAD DATASET-----
+
 
 df = pd.read_csv("Data/ktas_cleaned.csv")
 
-# Remove records where the chief complaint is MISSING
+# Remove missing chief complaints
 df = df[
     df["Chief_complain"].astype(str).str.strip().str.upper() != "MISSING"
 ].copy()
 
+df["cleaned_complaint"] = df["Chief_complain"].apply(clean_text)
 
-# --------------------------------------------------
-# DEFINE INPUT AND TARGET
-# --------------------------------------------------
 
-X = df["Chief_complain"]
+
+# -----SET INPUT AND TARGET-----
+
+X = df["cleaned_complaint"]
 y = df["KTAS_expert"]
 
 
-# --------------------------------------------------
-# TRAIN / TEST SPLIT
-# --------------------------------------------------
+
+# ----- SPLIT DATA FOR TRAINING AND TESTING -----
+
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
@@ -49,9 +51,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 
-# --------------------------------------------------
-# TF-IDF
-# --------------------------------------------------
+# ----- CONVERT THE COMPLAINTS TEXT INTO TF-IDF FEATURES -----
 
 tfidf = TfidfVectorizer(
     lowercase=True,
@@ -62,9 +62,7 @@ X_train_tfidf = tfidf.fit_transform(X_train)
 X_test_tfidf = tfidf.transform(X_test)
 
 
-# --------------------------------------------------
-# CREATE MODELS
-# --------------------------------------------------
+# ----- MODELS TO COMPARE -----
 
 random_forest = RandomForestClassifier(
     n_estimators=200,
@@ -90,22 +88,20 @@ models = {
 }
 
 
-# --------------------------------------------------
-# TRAIN AND EVALUATE MODELS
-# --------------------------------------------------
+# ----- TRAIN AND EVALUATE EACH MODEL -----
 
 print("KTAS NLP MODEL COMPARISON")
 print("-------------------------")
 
 for model_name, model in models.items():
 
-    # Train model
+   
     model.fit(X_train_tfidf, y_train)
 
-    # Predict KTAS levels
+    
     y_pred = model.predict(X_test_tfidf)
 
-    # Calculate evaluation metrics
+   
     accuracy = accuracy_score(y_test, y_pred)
 
     precision = precision_score(
@@ -129,9 +125,14 @@ for model_name, model in models.items():
         zero_division=0
     )
 
-# --------------------------------------------------
-# DETAILED LINEAR SVM EVALUATION
-# --------------------------------------------------
+    print(f"\n{model_name}")
+    print("-" * len(model_name))
+    print(f"Accuracy:  {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall:    {recall:.4f}")
+    print(f"F1 Score:  {f1:.4f}")
+
+# ----- DETAILED RESULTS FOR LINEAR SVM -----
 
 svm_predictions = linear_svm.predict(X_test_tfidf)
 
@@ -159,11 +160,4 @@ print(
     )
 )
 
-print(f"\n{model_name}")
-print("-" * len(model_name))
-
-print(f"Accuracy:  {accuracy:.4f}")
-print(f"Precision: {precision:.4f}")
-print(f"Recall:    {recall:.4f}")
-print(f"F1 Score:  {f1:.4f}")
 

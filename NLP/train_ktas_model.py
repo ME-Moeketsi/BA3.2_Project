@@ -6,16 +6,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-# --------------------------------------------------
-# LOAD DATA
-# --------------------------------------------------
+# ----- LOAD DATASET -----
 
 df = pd.read_csv("Data/ktas_cleaned.csv")
 
 
-# --------------------------------------------------
-# REMOVE MISSING CHIEF COMPLAINTS
-# --------------------------------------------------
+# ----- REMOVE MISSING CHIEF COMPLAINTS -----
 
 df = df[
     df["Chief_complain"].astype(str).str.strip().str.upper() != "MISSING"
@@ -26,17 +22,14 @@ df = df[
 df["cleaned_complaint"] = df["Chief_complain"].apply(clean_text)
 
 
-# --------------------------------------------------
-# DEFINE INPUT AND TARGET
-# --------------------------------------------------
+# ----- SET INPUT AND TARGET -----
 
 X = df["Chief_complain"]
 y = df["KTAS_expert"]
 X = df["cleaned_complaint"]
 
-# --------------------------------------------------
-# TRAIN / TEST SPLIT
-# --------------------------------------------------
+
+# ----- SPLIT DATA FOR TRAINING AND TESTING -----
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
@@ -47,9 +40,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 
-# --------------------------------------------------
-# TF-IDF
-# --------------------------------------------------
+# ----- CONVERT THE COMPLAINT TEXT INTO TF-IDF FEATURES -----
 
 tfidf = TfidfVectorizer(
     lowercase=True,
@@ -61,9 +52,7 @@ X_train_tfidf = tfidf.fit_transform(X_train)
 X_test_tfidf = tfidf.transform(X_test)
 
 
-# --------------------------------------------------
-# DISPLAY RESULTS
-# --------------------------------------------------
+# ----- DISPLAY TRAINING DATA RESULTS -----
 
 print("NLP Training Data Prepared")
 
@@ -89,9 +78,7 @@ print("\nExample TF-IDF features:")
 print(tfidf.get_feature_names_out()[:30])
 
 
-# --------------------------------------------------
-# TRAIN RANDOM FOREST CLASSIFIER
-# --------------------------------------------------
+# ----- TRAIN LINEAR SVM MODEL -----
 
 from sklearn.svm import LinearSVC
 
@@ -105,9 +92,8 @@ model.fit(X_train_tfidf, y_train)
 
 print("\nKTAS NLP model training completed successfully.")
 
-# --------------------------------------------------
-# SAVE MODEL AND TF-IDF VECTORIZER
-# --------------------------------------------------
+
+# ----- SAVE MODEL AND TF-IDF VECTORIZER -----
 
 import joblib
 
