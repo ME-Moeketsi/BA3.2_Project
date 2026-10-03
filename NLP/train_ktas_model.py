@@ -1,10 +1,11 @@
-from nlp_preprocessing import clean_text
 
 import pandas as pd
+import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-
+from sklearn.svm import LinearSVC
+from nlp_preprocessing import clean_text
 
 # ----- LOAD DATASET -----
 
@@ -24,7 +25,6 @@ df["cleaned_complaint"] = df["Chief_complain"].apply(clean_text)
 
 # ----- SET INPUT AND TARGET -----
 
-X = df["Chief_complain"]
 y = df["KTAS_expert"]
 X = df["cleaned_complaint"]
 
@@ -80,7 +80,7 @@ print(tfidf.get_feature_names_out()[:30])
 
 # ----- TRAIN LINEAR SVM MODEL -----
 
-from sklearn.svm import LinearSVC
+
 
 model = LinearSVC(
     class_weight="balanced",
@@ -95,7 +95,7 @@ print("\nKTAS NLP model training completed successfully.")
 
 # ----- SAVE MODEL AND TF-IDF VECTORIZER -----
 
-import joblib
+
 
 joblib.dump(model, "Models/ktas_nlp_model.pkl")
 joblib.dump(tfidf, "Models/ktas_tfidf_vectorizer.pkl")
