@@ -1,0 +1,59 @@
+PREDICT-CARE AI - NLP MODEL EVALUATION
+======================================
+Dataset: Data\ktas_cleaned.csv
+Valid records evaluated: 1246
+Training records recorded in manifest: 998
+Held-out test records: 248
+Model: Models\ktas_nlp_model.pkl
+TF-IDF vectorizer: Models\ktas_tfidf_vectorizer.pkl
+Split: StratifiedGroupKFold; identical cleaned complaint text is grouped
+
+FIVE-CLASS KTAS EVALUATION
+--------------------------
+Accuracy:        0.4758
+Macro precision: 0.4540
+Macro recall:    0.3441
+Macro F1 score:  0.3519
+
+Classification report (KTAS 1 through 5):
+              precision    recall  f1-score   support
+
+           1       0.00      0.00      0.00         4
+           2       0.89      0.37      0.52        43
+           3       0.42      0.22      0.29        97
+           4       0.46      0.87      0.60        89
+           5       0.50      0.27      0.35        15
+
+    accuracy                           0.48       248
+   macro avg       0.45      0.34      0.35       248
+weighted avg       0.51      0.48      0.44       248
+
+Confusion matrix (rows = actual, columns = predicted; KTAS 1 through 5):
+[[ 0  0  3  1  0]
+ [ 3 16 18  6  0]
+ [ 2  1 21 73  0]
+ [ 0  1  7 77  4]
+ [ 0  0  1 10  4]]
+
+EMERGENCY CATEGORY EVALUATION
+-----------------------------
+Accuracy:  0.6411
+Precision: 0.8767
+Recall:    0.4444
+F1 score:  0.5899
+
+Classification report:
+               precision    recall  f1-score   support
+
+    Emergency       0.88      0.44      0.59       144
+Non-Emergency       0.54      0.91      0.68       104
+
+     accuracy                           0.64       248
+    macro avg       0.71      0.68      0.64       248
+ weighted avg       0.74      0.64      0.63       248
+
+Confusion matrix (rows = actual, columns = predicted; Emergency first):
+[[64 80]
+ [ 9 95]]
+
+IMPORTANT: These results describe this held-out dataset split only. This academic prototype must not be used to make clinical decisions.

@@ -2,353 +2,213 @@
 Predict-Care AI
 Main Program
 
-Here I am running the complete AI/ML pipeline.
+Here I am coordinating the separate AI/ML components of my project.
 
-The project contains:
+The traditional machine-learning workflow trains:
+1. Emergency triage using a Random Forest Classifier.
+2. Hospital patient flow using a Random Forest Regressor.
 
-1. Emergency Triage Machine Learning
-   - Random Forest Classifier
+The other components remain separate:
+3. Emergency triage using a Deep Learning Neural Network.
+4. Patient-demand forecasting using Time-Series Analysis.
+5. Chief-complaint processing using Natural Language Processing.
 
-2. Hospital Patient Flow Machine Learning
-   - Random Forest Regressor
-
-3. Emergency Triage Deep Learning
-   - Neural Network Classifier
-
-The Deep Learning model is kept separate from the
-traditional Machine Learning models.
-
-NOTE: The comments will be deleted in the final version of the code. They are here for
-debugging purposes.
+Here I am running the traditional ML and Deep Learning scripts as separate
+Python processes because each script manages its own current training and
+preprocessing workflow.
 """
 
-
 # ============================================================
-# MACHINE LEARNING IMPORTS
-# ============================================================
-
-from healthcare_ai import *
-
-
-# ============================================================
-# DEEP LEARNING IMPORTS
+# IMPORTS
 # ============================================================
 
-from deep_learning import (
-    load_triage_dataset as load_dl_triage_dataset,
-    preprocess_triage_data as preprocess_dl_triage_data,
-    prepare_deep_learning_data,
-    train_deep_learning_model,
-    evaluate_deep_learning_model,
-    save_deep_learning_model,
-    deep_learning_status
-)
-# ============================================================
-# TIME-SERIES IMPORTS
-# ============================================================
+from pathlib import Path
+import subprocess
+import sys
 
-from time_series import run_time_series_analysis
+
+# Here I am finding the project directory from this file's location.
+PROJECT_DIR = Path(__file__).resolve().parent
+
 
 # ============================================================
-# MAIN PROGRAM
+# DIRECTORY SETUP
+# ============================================================
+
+def create_project_directories():
+    """Here I am making sure the main project folders exist."""
+
+    required_directories = [
+        PROJECT_DIR / "Data",
+        PROJECT_DIR / "Models",
+        PROJECT_DIR / "Results",
+        PROJECT_DIR / "NLP",
+        PROJECT_DIR / "Tests",
+        PROJECT_DIR / "Project Documentation",
+    ]
+
+    for directory in required_directories:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    print("Project directories are ready.")
+
+
+# ============================================================
+# RUN A STANDALONE PYTHON SCRIPT
+# ============================================================
+
+def run_python_script(script_path, component_name):
+    """
+    Here I am running a component using the same Python interpreter
+    that is running Main.py.
+
+    I am allowing the component's output to appear in the terminal.
+    If the component fails, I stop the main workflow instead of
+    reporting that the complete system succeeded.
+    """
+
+    script_path = PROJECT_DIR / script_path
+
+    if not script_path.is_file():
+        raise FileNotFoundError(
+            f"{component_name} script was not found: {script_path}"
+        )
+
+    print("\n")
+    print("=" * 60)
+    print(f"STARTING: {component_name}")
+    print("=" * 60)
+
+    subprocess.run(
+        [sys.executable, "-u", str(script_path)],
+        cwd=PROJECT_DIR,
+        check=True,
+    )
+
+    print(f"\n{component_name} completed successfully.")
+
+
+# ============================================================
+# RUN TIME-SERIES ANALYSIS
+# ============================================================
+
+def run_time_series_component():
+    """Here I am calling the time-series workflow."""
+
+    from time_series import run_time_series_analysis
+
+    print("\n")
+    print("=" * 60)
+    print("STARTING: TIME-SERIES ANALYSIS")
+    print("=" * 60)
+
+    results = run_time_series_analysis()
+
+    print("\nTime-series analysis completed successfully.")
+    return results
+
+
+# ============================================================
+# RUN NATURAL LANGUAGE PROCESSING
+# ============================================================
+
+def run_nlp_component():
+    """Here I am calling the NLP workflow."""
+
+    from NLP.nlp_pipeline import run_nlp_pipeline
+
+    print("\n")
+    print("=" * 60)
+    print("STARTING: NATURAL LANGUAGE PROCESSING")
+    print("=" * 60)
+
+    results = run_nlp_pipeline()
+
+    print("\nNLP pipeline completed successfully.")
+    return results
+
+
+# ============================================================
+# CHECK EXPECTED OUTPUT FILES
+# ============================================================
+
+def report_model_files():
+    """Here I am checking which expected model files exist."""
+
+    expected_files = [
+        PROJECT_DIR / "Models" / "triage_model.pkl",
+        PROJECT_DIR / "Models" / "triage_preprocessor.pkl",
+        PROJECT_DIR / "Models" / "patient_flow_model.pkl",
+        PROJECT_DIR / "Models" / "patient_flow_preprocessor.pkl",
+        PROJECT_DIR / "Models" / "deep_learning_triage_model.keras",
+        PROJECT_DIR / "Models" / "deep_learning_triage_preprocessor.pkl",
+        PROJECT_DIR / "Models" / "time_series_model.pkl",
+        PROJECT_DIR / "Results" / "time_series_evaluation.csv",
+        PROJECT_DIR / "Results" / "time_series_evaluation.png",
+    ]
+
+    print("\n")
+    print("=" * 60)
+    print("PREDICT-CARE AI OUTPUT FILE CHECK")
+    print("=" * 60)
+
+    for file_path in expected_files:
+        relative_path = file_path.relative_to(PROJECT_DIR)
+        status = "FOUND" if file_path.is_file() else "NOT FOUND"
+        print(f"{status}: {relative_path}")
+
+
+# ============================================================
+# MAIN WORKFLOW
+# ============================================================
+
+def main():
+    """Here I am coordinating the project's separate AI components."""
+
+    print("\n")
+    print("#" * 60)
+    print("#             PREDICT-CARE AI SYSTEM")
+    print("#" * 60)
+    print("\nStarting the AI/ML workflow...")
+
+    create_project_directories()
+
+    # Here I am training and evaluating the traditional ML models.
+    # healthcare_ai.py manages both the triage and patient-flow models.
+    run_python_script(
+        Path("healthcare_ai.py"),
+        "TRADITIONAL MACHINE LEARNING",
+    )
+
+    # Here I am training and evaluating the separate neural network.
+    run_python_script(
+        Path("deep_learning.py"),
+        "DEEP LEARNING",
+    )
+
+    # Here I am running patient-demand forecasting.
+    run_time_series_component()
+
+    # Here I am running the NLP pipeline for chief complaints.
+    run_nlp_component()
+
+    # Here I am checking for the expected saved model and result files.
+    report_model_files()
+
+    print("\n")
+    print("=" * 60)
+    print("PREDICT-CARE AI WORKFLOW COMPLETED")
+    print("=" * 60)
+    print(
+        "All pipeline steps completed without a reported error. "
+        "Review each component's evaluation output before interpreting "
+        "its results."
+    )
+
+
+# ============================================================
+# PROGRAM ENTRY POINT
 # ============================================================
 
 if __name__ == "__main__":
-
-    # ========================================================
-    # CREATE DIRECTORIES
-    # ========================================================
-
-    create_directories()
-
-    print("\n")
-    print("############################################")
-    print("#       PREDICT-CARE AI SYSTEM")
-    print("############################################")
-
-    print("\nStarting AI system...")
-
-
-    # ========================================================
-    # SYSTEM STATUS
-    # ========================================================
-
-    system_status()
-
-
-    # ========================================================
-    # DATASET 1
-    # EMERGENCY TRIAGE
-    # RANDOM FOREST CLASSIFIER
-    # ========================================================
-
-    print("\n")
-    print("############################################")
-    print("# DATASET 1: EMERGENCY TRIAGE")
-    print("# RANDOM FOREST CLASSIFIER")
-    print("############################################")
-
-    triage_data = load_triage_dataset()
-
-    triage_data = preprocess_triage_data(
-        triage_data
-    )
-
-    (
-        triage_X_train,
-        triage_X_test,
-        triage_y_train,
-        triage_y_test,
-        triage_scaler,
-        triage_features
-    ) = prepare_triage_data(
-        triage_data
-    )
-
-    triage_model = train_triage_model(
-        triage_X_train,
-        triage_y_train
-    )
-
-    triage_results = evaluate_triage_model(
-        triage_model,
-        triage_X_test,
-        triage_y_test
-    )
-
-    save_triage_model(
-        triage_model,
-        triage_scaler,
-        triage_features
-    )
-
-
-    # ========================================================
-    # DATASET 2
-    # HOSPITAL PATIENT FLOW
-    # RANDOM FOREST REGRESSOR
-    # ========================================================
-
-    print("\n")
-    print("############################################")
-    print("# DATASET 2: HOSPITAL PATIENT FLOW")
-    print("# RANDOM FOREST REGRESSOR")
-    print("############################################")
-
-    flow_data = load_patient_flow_dataset()
-
-    flow_data = preprocess_patient_flow_data(
-        flow_data
-    )
-
-    (
-        flow_X_train,
-        flow_X_test,
-        flow_y_train,
-        flow_y_test,
-        flow_scaler,
-        flow_features
-    ) = prepare_patient_flow_data(
-        flow_data
-    )
-
-    flow_model = train_patient_flow_model(
-        flow_X_train,
-        flow_y_train
-    )
-
-    flow_results = evaluate_patient_flow_model(
-        flow_model,
-        flow_X_test,
-        flow_y_test
-    )
-
-    save_patient_flow_model(
-        flow_model,
-        flow_scaler,
-        flow_features
-    )
-
-
-    # ========================================================
-    # DEEP LEARNING
-    # EMERGENCY TRIAGE NEURAL NETWORK
-    # ========================================================
-
-    print("\n")
-    print("############################################")
-    print("# DEEP LEARNING")
-    print("# EMERGENCY TRIAGE NEURAL NETWORK")
-    print("############################################")
-
-    dl_data = load_dl_triage_dataset()
-
-    dl_data = preprocess_dl_triage_data(
-        dl_data
-    )
-
-    (
-        dl_X_train,
-        dl_X_test,
-        dl_y_train,
-        dl_y_test,
-        dl_scaler,
-        dl_features
-    ) = prepare_deep_learning_data(
-        dl_data
-    )
-
-    dl_model, dl_history = train_deep_learning_model(
-        dl_X_train,
-        dl_y_train,
-        epochs=30,
-        batch_size=32
-    )
-
-    dl_results = evaluate_deep_learning_model(
-        dl_model,
-        dl_X_test,
-        dl_y_test
-    )
-
-    save_deep_learning_model(
-        dl_model,
-        dl_scaler,
-        dl_features
-    )
-    # ========================================================
-    # TIME-SERIES ANALYSIS
-    # PATIENT DEMAND FORECASTING
-    # I am calling the function, not copying the entire time-series program into the main file.
-
-    print("\n")
-    print("############################################")
-    print("# TIME-SERIES ANALYSIS")
-    print("# PATIENT DEMAND FORECASTING")
-    print("############################################")
-
-    time_series_results = run_time_series_analysis()
-
-    # ========================================================
-    # FINAL RESULTS
-    # ========================================================
-
-    print("\n")
-    print("############################################")
-    print("#       PREDICT-CARE AI RESULTS")
-    print("############################################")
-
-    print(
-        f"\nRandom Forest Triage Accuracy: "
-        f"{triage_results['accuracy']:.4f}"
-    )
-
-    print(
-        f"Deep Learning Triage Accuracy: "
-        f"{dl_results['accuracy']:.4f}"
-    )
-
-    print(
-        f"Patient Flow MAE: "
-        f"{flow_results['mae']:.4f}"
-    )
-
-    print(
-        f"Patient Flow RMSE: "
-        f"{flow_results['rmse']:.4f}"
-    )
-
-    print(
-        f"Patient Flow R²: "
-        f"{flow_results['r2']:.4f}"
-    )
-    
-    print(
-        f"\nTime-Series Test MAE: "
-        f"{time_series_results['MAE'].mean():.2f}"
-    )
-
-    print(
-        f"Time-Series Test RMSE: "
-        f"{time_series_results['RMSE'].mean():.2f}"
-    )
-
-    print("\n")
-    print("============================================")
-    print("MODEL FILES CREATED")
-    print("============================================")
-
-    print(
-        "\nTraditional ML:"
-    )
-
-    print(
-        "Models/triage_model.pkl"
-    )
-
-    print(
-        "Models/patient_flow_model.pkl"
-    )
-
-    print(
-        "\nDeep Learning:"
-    )
-
-    print(
-        "Models/deep_learning_triage_model.keras"
-    )
-
-    print(
-        "Models/deep_learning_triage_preprocessor.pkl"
-    )
-    print(
-        "\nTime-Series:"
-        )
-    print(
-            "Models/time_series_model.pkl"
-        )
-    print(
-        "\nTime-Series Results:"
-        )
-    print(
-        "Results/time_series_evaluation.csv"
-        )
-    print(
-        "Results/time_series_evaluation.png"
-        )
-    print("\n")
-    print("All models have been trained, evaluated and saved.")
-
-
-# ============================================================
-# POST-MODEL SECTION
-# ============================================================
-#
-# IMPORTANT:
-#
-# The code below is NOT part of the initial training process.
-#
-# Use the trained models only AFTER:
-#
-# 1. Main.py has successfully completed.
-# 2. The model files exist inside Models/.
-# 3. You have checked the evaluation results.
-#
-# This section will later be used when we build the actual
-# patient prediction part of Predict-Care AI.
-#
-# DO NOT add prediction code here yet.
-#
-# The next stage will be:
-#
-# Patient information
-#        ↓
-# Data preprocessing
-#        ↓
-# Trained model
-#        ↓
-# Prediction
-#        ↓
-# AI decision-support output
-#
-# ============================================================
+    main()
