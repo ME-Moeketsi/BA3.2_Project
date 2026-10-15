@@ -30,34 +30,31 @@ def predict_ktas(chief_complaint):
     return predicted_ktas, emergency_category
 
 
-# ----- GET USER INPUT -----
 
-print("\nPREDICT-CARE AI")
-print("NLP Patient Triage Support")
-print("--------------------------")
+# ----- GET USER INPUT WHEN RUN DIRECTLY -----
 
-chief_complaint = input(
-    "\nEnter patient chief complaint: "
-)
+if __name__ == "__main__":
 
+    print("\nPREDICT-CARE AI")
+    print("NLP Patient Triage Support")
+    print("--------------------------")
 
-# ----- MAKE PREDICTION -----
+    chief_complaint = input(
+        "\nEnter patient chief complaint: "
+    )
 
-predicted_ktas, emergency_category = predict_ktas(
-    chief_complaint
-)
+    predicted_ktas, emergency_category = predict_ktas(
+        chief_complaint
+    )
 
+    print("\nPREDICTION RESULT")
+    print("-----------------")
 
-# ----- DISPLAY RESULT -----
+    print(f"Chief Complaint: {chief_complaint}")
+    print(f"Predicted KTAS Level: {predicted_ktas}")
+    print(f"Emergency Category: {emergency_category}")
 
-print("\nPREDICTION RESULT")
-print("-----------------")
-
-print(f"Chief Complaint: {chief_complaint}")
-print(f"Predicted KTAS Level: {predicted_ktas}")
-print(f"Emergency Category: {emergency_category}")
-
-print(
-    "\nNote: This prediction is for decision-support only "
-    "and does not replace professional clinical assessment."
-)
+    print(
+        "\nNote: This prediction is for decision-support only "
+        "and does not replace professional clinical assessment."
+    )
