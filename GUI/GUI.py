@@ -32,17 +32,172 @@ MIN_CARD_WIDTH = 280
 inputs = {}
 container_cards = []
 
+
+# ==================================================
+# RIGHT-SIDE CONTAINER WITH 3 EQUAL SECTIONS
+# ==================================================
+
+right_container = tk.Frame(
+    root,
+    bg=BG,
+    highlightbackground=BORDER,
+    highlightthickness=1
+)
+
+right_container.place(
+    relx=1.0,
+    rely=0.5,
+    relwidth=0.25,
+    relheight=0.90,
+    x=-15,
+    anchor="e"
+)
+
+# Configure three equally sized containers.
+right_container.grid_columnconfigure(0, weight=1)
+
+for row in range(3):
+    right_container.grid_rowconfigure(row, weight=1, uniform="right_sections")
+
+# Create the three sections.
+right_sections = []
+
+for i in range(3):
+    section = tk.Frame(
+        right_container,
+        bg=WHITE,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        padx=10,
+        pady=10
+    )
+
+    section.grid(
+        row=i,
+        column=0,
+        sticky="nsew",
+        padx=6,
+        pady=6
+    )
+
+    right_sections.append(section)
+
+# Optional headings for each section.
+section_titles = [
+    "Patient Sumary",
+    "Calculated Triage Level",
+    "Estimated Waiting Time"
+]
+
+for section, title in zip(right_sections, section_titles):
+    tk.Label(
+        section,
+        text=title,
+        font=("Segoe UI", 12, "bold"),
+        bg=WHITE,
+        fg=TEXT,
+        anchor="w"
+    ).pack(
+        fill="x"
+    )
+
+
+# ==================================================
+# PATIENT SUMMARY DISPLAY
+# ==================================================
+
+summary_label = tk.Label(
+    right_sections[0],
+    text="Patient Summary\n\nComplete the form and click Continue.",
+    font=("Segoe UI", 10),
+    bg=WHITE,
+    fg=TEXT,
+    anchor="nw",
+    justify="left",
+    wraplength=220
+)
+
+summary_label.pack(
+    fill="both",
+    expand=True,
+    anchor="nw",
+    padx=5,
+    pady=10
+)
+def resize_summary(event):
+    summary_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[0].bind(
+    "<Configure>",
+    resize_summary
+)
+
+
+# ==================================================
+# CALCULATE BUTTON - SECOND RIGHT-SIDE CONTAINER
+# ==================================================
+calculate_label = tk.Label(
+right_sections[1],
+text="Calculate only after all patient information has been entered"
+)
+
+calculate_label.pack(
+    fill="both",
+    expand= True,
+    anchor="nw",
+    padx=5,
+    pady=10
+ )
+def resize_calculate(event):
+    calculate_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[1].bind(
+    "<Configure>",
+    resize_calculate
+)
+
+
+
+calculate_button = tk.Button(
+    right_sections[1],
+    text="Calculate",
+    font=("Segoe UI", 11, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    borderwidth=0,
+    cursor="hand2",
+    padx=20,
+    pady=10,
+    command=lambda: print("Calculate button clicked")
+)
+
+calculate_button.pack(
+    fill="x",
+    padx=12,
+    pady=12
+)
+
+
 # ==================================================
 # 3. SCROLLABLE CONTENT AREA
 # ==================================================
 
 content_area = tk.Frame(root, bg=BG)
-content_area.pack(
-    side="top",
-    fill="both",
-    expand=True,
-    padx=12,
-    pady=(12, 5)
+
+content_area.place(
+    relx=0.0,
+    rely=0.0,
+    relwidth=0.73,
+    relheight=0.90,
+    x=12,
+    y=12
 )
 
 # Canvas makes it possible to scroll through the cards.
@@ -811,11 +966,12 @@ def continue_action():
     # ----------------------------------------------
     # Display the submitted information.
     # ----------------------------------------------
-
-    messagebox.showinfo(
-        "Form Submitted",
-        summary
+       # Display the summary in the first right-side sub-container.
+    summary_label.configure(
+    text="Patient Summary\n\n" + summary
     )
+
+
 
 
 # ==================================================
