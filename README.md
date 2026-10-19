@@ -123,27 +123,27 @@ Healthcare Staff
 
 **Project Manager:** 
 
-Angel Mavuyangwa
+1. Angel Mavuyangwa
 
 **Developers:** 
 
-1. Moeketsi Mahloane
+2. Moeketsi Mahloane
 
-2. Atlegang More
+3. Atlegang More
 
-3. Mike {Write your Sirname Herr Mike}
+4. Michael Kaniki
 
 **System Analysts:**
 
-1. Linda Skhosana
+5. Linda Skhosana
 
-2. Loyiso Hlophe
+6. Loyiso Hlophe
 
 **Testers:** 
 
-1. Murendeni {Kindly write your Name Herr Mam.}
+7. Murendeni Rasilingwane
 
-2. Khanyisile Hlatshwayo
+8. Khanyisile Hlatshwayo
 
 ---
 
