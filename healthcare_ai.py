@@ -52,7 +52,10 @@ TRIAGE_PREPROCESSOR_FILE = os.path.join(MODEL_DIR, "triage_preprocessor.pkl")
 FLOW_PREPROCESSOR_FILE = os.path.join(MODEL_DIR, "patient_flow_preprocessor.pkl")
 
 TRIAGE_TARGET = "KTAS_expert"
-FLOW_TARGET = "doc_wait_min"
+# Here I identify the doctor waiting time that my model must predict.
+#FLOW_TARGET = "doc_wait_min"
+
+FLOW_TARGET = "DocWaitTime"
 
 # These are initial-triage features. Fields recorded after triage, including
 # KTAS_RN, Diagnosis in ED, Disposition, Error_group, Length of stay_min,
@@ -82,14 +85,20 @@ TRIAGE_NUMERICAL_FEATURES = [
 TRIAGE_FEATURES = (
     TRIAGE_CATEGORICAL_FEATURES + TRIAGE_NUMERICAL_FEATURES
 )
-
-FLOW_FEATURES = [
+# Here I map the feature names to the columns in my patient-flow dataset.
+"""FLOW_FEATURES = [
     "priority_level",
     "IsPeakArrival",
     "num_doctors",
     "PeakLimit",
+]"""
+#Updated flow features to match the patient flow dataset columns
+FLOW_FEATURES = [
+    "Priority",
+    "IsPeakArrival",
+    "NumDoctors",
+    "PeakLimit",
 ]
-
 
 # ============================================================
 # DIRECTORY SETUP
