@@ -8,6 +8,8 @@
 
 </div>
 
+---
+
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
 
 Predict-Care AI is an AI-driven healthcare system designed to support patient management, triage analysis, patient flow, and hospital operational decision-making.
@@ -22,6 +24,8 @@ The system uses machine learning to analyse patient and hospital operational dat
 * Analyse peak-time hospital conditions.
 * Support healthcare resource planning and allocation.
 * Provide data-driven decision support for healthcare staff.
+
+---
 
 ## AI & Machine Learning
 
@@ -57,6 +61,7 @@ Uses hospital simulation data to analyse operational conditions and predict hosp
 * Medication waiting time
 * Total time in hospital
 
+---
 ## Datasets
 
 ### Emergency Service Triage Dataset
@@ -72,6 +77,8 @@ The dataset contains emergency-department patient information including demograp
 Used for analysing hospital operations under different scenarios, including peak arrival conditions, staffing levels, patient priority, service times, and waiting times.
 
 *link:* [Hospital Simulation Dataset.](https://www.kaggle.com/datasets/juneminazuki/hospital-queue-and-patient-flow-simulation)
+
+---
 
 ## System Concept
 
@@ -93,6 +100,8 @@ AI Decision Support
 Healthcare Staff
 ```
 
+---
+
 ## Technologies
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=white)
@@ -107,6 +116,24 @@ Healthcare Staff
 * Joblib
 * Machine Learning
 * Time-Series Analysis
+
+---
+
+## Team Mates and Roles:
+
+**Project Manager:** Angel Mavuyangwa
+
+**Developers:** 1. Moeketsi Mahloane
+                2. Atlegang More
+                3. Mike {Write your Sirname Herr Mike}
+
+**System Analysts:** 1. Linda Skhosana
+                     2. Loyiso Hlophe
+
+**Testers:** 1. Murendeni {Kindly write your Name Herr Mam.}
+             2. Khanyisile Hlatshwayo
+             
+---
 
 ## Project Status
 
