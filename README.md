@@ -121,21 +121,29 @@ Healthcare Staff
 
 ## Team Mates and Roles:
 
-**Project Manager:** Angel Mavuyangwa
+**Project Manager:** 
 
-**Developers:** 1. Moeketsi Mahloane
+Angel Mavuyangwa
 
-                2. Atlegang More
+**Developers:** 
 
-                3. Mike {Write your Sirname Herr Mike}
+1. Moeketsi Mahloane
 
-**System Analysts:** 1. Linda Skhosana
+2. Atlegang More
 
-                     2. Loyiso Hlophe
+3. Mike {Write your Sirname Herr Mike}
 
-**Testers:** 1. Murendeni {Kindly write your Name Herr Mam.}
+**System Analysts:**
 
-             2. Khanyisile Hlatshwayo
+1. Linda Skhosana
+
+2. Loyiso Hlophe
+
+**Testers:** 
+
+1. Murendeni {Kindly write your Name Herr Mam.}
+
+2. Khanyisile Hlatshwayo
 
 ---
 
