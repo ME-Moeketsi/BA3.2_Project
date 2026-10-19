@@ -163,4 +163,5 @@ It does not replace healthcare professionals or make autonomous clinical decisio
 
 **Predict-Care AI**
 *Using AI to support smarter healthcare operations and patient management.*
+
 **Note:** *This is for educational Purposes only, developed by students of Vaal University Of Technology.*
