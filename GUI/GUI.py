@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from voice_assistant import start_voice_assistant
+import pythoncom
 
 # ==================================================
 # 1. MAIN WINDOW
@@ -164,7 +166,7 @@ right_sections[1].bind(
 
 calculate_button = tk.Button(
     right_sections[1],
-    text="Calculate",
+    text="Calculate 🧮",
     font=("Segoe UI", 11, "bold"),
     bg=PRIMARY,
     fg=WHITE,
@@ -184,6 +186,72 @@ calculate_button.pack(
     pady=12
 )
 
+
+
+
+
+
+# ==================================================
+# VOICE ASSESSMENT BUTTON
+# ==================================================
+
+voice_status = tk.Label(
+    right_sections[0],
+    text="Ready for voice assessment",
+    font=("Segoe UI", 9),
+    bg=WHITE,
+    fg=MUTED,
+    wraplength=200
+)
+
+voice_status.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
+
+
+voice_session = None
+
+
+def update_voice_status(message):
+    voice_status.configure(text=message)
+
+
+def begin_voice_assessment():
+    global voice_session
+
+    voice_button.configure(state="disabled")
+
+    voice_session = start_voice_assistant(
+        root,
+        inputs,
+        on_status=update_voice_status
+    )
+
+    # Allow another interview after the current one finishes.
+    # Re-enable manually after completion if desired.
+
+voice_button = tk.Button(
+    right_sections[0],
+    text="Start Voice Assessment 🎤 ",
+    command=begin_voice_assessment,
+    font=("Segoe UI", 10, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    cursor="hand2",
+    padx=10,
+    pady=10
+)
+
+voice_button.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
 
 # ==================================================
 # 3. SCROLLABLE CONTENT AREA
@@ -428,6 +496,12 @@ def create_radio_group(parent, options, variable):
 
         variable.set(title)
         refresh()
+            # Refresh the radio cards whenever the variable changes,
+    # including when the voice assistant updates it.
+    variable.trace_add(
+        "write",
+        lambda *_: refresh()
+    )
 
     for title, description in options:
 
