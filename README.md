@@ -7,7 +7,11 @@
 ![License:](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
 
 </div>
-
+<div align="center">
+  <img src="Project%20Documentation/artificial-intelligence-ai-icon.svg"
+       alt="Predict-Care AI Icon"
+       width="150">
+</div>
 ---
 
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
