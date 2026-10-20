@@ -12,6 +12,7 @@
        alt="Predict-Care AI Icon"
        width="150">
 </div>
+
 ---
 
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
