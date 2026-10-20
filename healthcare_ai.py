@@ -93,12 +93,20 @@ TRIAGE_FEATURES = (
     "PeakLimit",
 ]"""
 #Updated flow features to match the patient flow dataset columns
-FLOW_FEATURES = [
+# Here I select the features available when a patient arrives.
+FLOW_NUMERICAL_FEATURES = [
     "Priority",
     "IsPeakArrival",
     "NumDoctors",
     "PeakLimit",
+    "ArrivalTime",
 ]
+
+FLOW_CATEGORICAL_FEATURES = [
+    "Scenario",
+]
+
+FLOW_FEATURES = FLOW_NUMERICAL_FEATURES + FLOW_CATEGORICAL_FEATURES
 
 # ============================================================
 # DIRECTORY SETUP
@@ -353,8 +361,9 @@ def preprocess_patient_flow_data(data):
     return data
 
 
+
 def prepare_patient_flow_data(data, test_size=0.20):
-    """Here I prepare the operational features for waiting-time regression."""
+    """Here I prepare numerical and categorical features for waiting-time regression."""
     data = data.copy()
 
     required_columns = FLOW_FEATURES + [FLOW_TARGET]
@@ -366,10 +375,11 @@ def prepare_patient_flow_data(data, test_size=0.20):
             f"Missing patient-flow columns: {missing_columns}"
         )
 
-    # I convert the selected columns to numeric values and reject invalid targets.
-    for column in required_columns:
+    # Here I convert only numerical columns to numeric values.
+    for column in FLOW_NUMERICAL_FEATURES + [FLOW_TARGET]:
         data[column] = pd.to_numeric(data[column], errors="coerce")
 
+    # Here I remove rows without a valid target.
     data = data.dropna(subset=[FLOW_TARGET]).copy()
     if data.empty:
         raise ValueError("No valid patient-flow target values remain.")
@@ -377,6 +387,7 @@ def prepare_patient_flow_data(data, test_size=0.20):
     X = data[FLOW_FEATURES].copy()
     y = data[FLOW_TARGET].copy()
 
+    # Here I split the data before fitting any preprocessing.
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -384,21 +395,49 @@ def prepare_patient_flow_data(data, test_size=0.20):
         random_state=42,
     )
 
-    # I fit imputation and scaling on the training split only. I save both
-    # steps together so future predictions use the same preprocessing.
-    flow_preprocessor = Pipeline(
+    # Here I prepare numerical features using median imputation and scaling.
+    numerical_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="median")),
             ("scaler", StandardScaler()),
         ]
     )
+
+    # Here I encode the scenario names as categorical features.
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore")),
+        ]
+    )
+
+    # Here I combine both preprocessing pipelines.
+    flow_preprocessor = ColumnTransformer(
+        transformers=[
+            (
+                "numerical",
+                numerical_pipeline,
+                FLOW_NUMERICAL_FEATURES,
+            ),
+            (
+                "categorical",
+                categorical_pipeline,
+                FLOW_CATEGORICAL_FEATURES,
+            ),
+        ],
+        remainder="drop",
+    )
+
+    # Here I fit preprocessing on training data and transform both splits.
     X_train_scaled = flow_preprocessor.fit_transform(X_train)
     X_test_scaled = flow_preprocessor.transform(X_test)
 
     print("\nPatient-flow data prepared.")
     print(f"Training records: {len(X_train)}")
     print(f"Testing records: {len(X_test)}")
-    print(f"Features used: {len(FLOW_FEATURES)}")
+    print(f"Numerical features: {len(FLOW_NUMERICAL_FEATURES)}")
+    print(f"Categorical features: {len(FLOW_CATEGORICAL_FEATURES)}")
+    print(f"Encoded feature count: {X_train_scaled.shape[1]}")
 
     return (
         X_train_scaled,
@@ -408,7 +447,6 @@ def prepare_patient_flow_data(data, test_size=0.20):
         flow_preprocessor,
         FLOW_FEATURES.copy(),
     )
-
 
 def train_patient_flow_model(X_train, y_train):
     """Here I train a Random Forest regressor to estimate waiting time."""
