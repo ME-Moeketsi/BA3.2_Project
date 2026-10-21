@@ -46,3 +46,6 @@ Thumbs.db
 # Word document
 *.docx
 *.doc
+
+# Powershell
+*.ps1

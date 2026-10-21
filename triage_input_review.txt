@@ -1,0 +1,501 @@
+DATASET SHAPE: (6167, 24)
+
+DATASET COLUMNS:
+  Group
+  Sex
+  Age
+  Arrival mode
+  Injury
+  Chief_complain
+  Mental
+  Pain
+  NRS_pain
+  SBP
+  DBP
+  HR
+  RR
+  BT
+  Saturation
+  KTAS_expert
+  Patients number per hour
+  KTAS_RN
+  Diagnosis in ED
+  Disposition
+  Error_group
+  Length of stay_min
+  KTAS duration_min
+  Mistriage
+
+CATEGORICAL INPUT VALUES:
+
+Group (2 unique values):
+  1
+  2
+
+Sex (2 unique values):
+  1
+  2
+
+Arrival mode (7 unique values):
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+
+Injury (2 unique values):
+  1
+  2
+
+Mental (4 unique values):
+  1
+  2
+  3
+  4
+
+Pain (3 unique values):
+  0
+  1
+  2
+
+Chief_complain (427 unique values):
+  Abdomen Discomfort
+  Abdomen Distension
+  Abdomen Pain
+  Abdominal Distension
+  Abdominal Pain
+  Abdominal Pain Finding
+  Abdominal Pain Left Upper Quadrant
+  Abdominal Pain Periumbilical Area
+  Abdominal Pain Right
+  Abdominal pain
+  Abnormal Lab
+  Abnormality Visual Acuity
+  Acute Delirium
+  Acute Dyspnea
+  Acute Epigastric Pain
+  Alcohol Smell
+  Alcohol Smelling State Drunken State
+  Altered Mental Change
+  Altered Mental Status
+  Altered Mentality
+  Amnesia
+  Anal Bleeding
+  Anemia
+  Ankle Injury
+  Ankle Pain
+  Anterior Chest Discomfort
+  Anterior Chest Pain
+  Anxiety
+  Aphasia Motor
+  Arm Injury
+  Arm Pain
+  Arm Pain Left
+  Arm Pain Right
+  Arrest
+  Arteriovenous Fistula Malfunction
+  Arteriovenous Fistula Site Bleeding
+  Ascites Tapping
+  Back Pain
+  Backache
+  Bee Sting
+  Behavior Change
+  Bleeding Gingival
+  Bleeding Knee
+  Blood Pressure Low
+  Blood Sugar Test High
+  Blood Tinged Sputum
+  Blurred Vision
+  Burn Arm
+  Burn Face
+  Burn Hand
+  Buttock Pain
+  Cardiac Arrest
+  Cardiac arrest
+  Catheter Removal
+  Cerebral Concussion
+  Chemical Burn
+  Chest Discomfort
+  Chest Discomfort Left
+  Chest Pain
+  Chest Pain Nos Finding
+  Chest Pain Right
+  Chest Palpitation
+  Chest Wall Pain Left
+  Chest Wall Pain Right
+  Chin Pain
+  Chin Swelling
+  Chronic Knee Pain
+  Coccygeal Pain
+  Cold
+  Computed Tomography Film Copy
+  Confuse Mentality
+  Confused Mental Status
+  Confusion Mentality
+  Confusion State
+  Convulsion
+  Copy
+  Cough
+  Coughing
+  Decerased Visual Acuity
+  Decreased Activity
+  Dehydration
+  Delusional Idea
+  Dental Problem
+  Depression
+  Desaturation
+  Diarrhea
+  Difficulty In Voiding
+  Diffuse Abdominal Discomfort
+  Diffuse Abdominal Pain
+  Diffuse Chest Discomfort
+  Discomfort Chest
+  Discomfort Throat
+  Dislocation Of Jaw
+  Distended Abdomen
+  Distension Abdominal
+  Dizziness
+  Dizziness Dizziness
+  Drowsy Mentality
+  Drug Allergy
+  Drug Intoxication
+  Drug Intoxication Drug Intoxication
+  Dysarthria
+  Dyspnea
+  Dysuria
+  Ear Discomfort
+  Ear Pain
+  Ear Pain Left
+  Eczema Eyelid
+  Edema Cheek
+  Elbow Injury
+  Elbow Painful Swelling
+  Elbow Painful Swelling Left
+  Epigastric Discomfort
+  Epigastric Pain
+  Epistaxis
+  Erection Penile
+  Erythematous Papule
+  Examination
+  Eye Discomfort
+  Eye Foreign Body
+  Eye Injury
+  Eye Pain
+  Eye Pain Left Eye
+  Eye Trauma
+  Eyebrow Laceration
+  Eyelid Laceration
+  Eyelid Swelling
+  Face Laceration
+  Facial Injury
+  Facial Lesion
+  Facial Painful Swelling
+  Facial Palsy
+  Facial Palsy Left
+  Femur Lesion
+  Fever
+  Fever & Chill
+  Fever And Chills
+  Fever Unspecified
+  Fever, Chills And Sweats
+  Finger Injury
+  Finger Lac
+  Finger Laceration
+  Finger Laceration Wound
+  Finger Pain
+  Flank Pain
+  Flank Pain Right
+  Follow-up Visit
+  Foot Injury
+  Foot Swelling
+  Forehead Laceration
+  Foreign Body In Esophagus
+  Foreign Body In Eye
+  Foreign Body In Pharynx
+  Foreign Body In Throat
+  Foreign Body Ingestion
+  Foreign Body Sensation In Neck
+  Foreign Body Sensation In Throat
+  Foreign Body Sense
+  Free Voiding
+  General Ache
+  General Weakness
+  Generalized Abdominal Pain
+  Generalized Urticaria
+  Gingival Bleeding
+  Gingival Swelling
+  Hallucination
+  Hand Injury
+  Hand Laceration
+  Hand Numbness
+  Hand Tingling Sense
+  Head Injury
+  Head Pain
+  Head Trauma
+  Headache
+  Headache Headache
+  Hematemesis
+  Hematochezia
+  Hematuria
+  Hemoptysis
+  Hiccup
+  High Blood Sugar Level
+  High Fever
+  High fever
+  Hip Joint Pain
+  Hip Pain Left
+  Hyperkalemia Disorder
+  Hypertension
+  Hyperventilation
+  Hypoglycemic
+  Hypoglycemic Symptom
+  Injury Ankle
+  Injury Finger
+  Injury Leg
+  Intravenous Injection
+  Involuntary Movt
+  Itching
+  Itching Sensation
+  Knee Injury
+  Knee Pain
+  L Side Weakness
+  Laceration
+  Laceration Chin
+  Laceration Scalp
+  Left Chest Pain
+  Left Diplopia
+  Left Eye Pain
+  Left Eye Swelling
+  Left Eyelid Laceration
+  Left Facial Numbness
+  Left Flank Pain
+  Left Forearm Pain
+  Left Hemiparesis
+  Left Hip Joint Pain
+  Left Knee Swelling
+  Left Leg Pain
+  Left Lower Quadrant Pain
+  Left Motor Weakness
+  Left Side Motor Weakness
+  Left Side Weakness
+  Left Thigh Swelling
+  Left Wrist Swelling
+  Leg Cellulitis
+  Leg Motor Weakness
+  Leg Pain
+  Leg Pain Left
+  Leg Pain Nos
+  Leg Pain Right
+  Leg Swelling Left
+  Light Headness
+  Limb Paresthesia
+  Lip Laceration
+  Loss Of Consciousness
+  Loss Of Consciousness Loss Of Consciousness
+  Low Abdominal Discomfort
+  Low Abdominal Pain
+  Low Back Pain Low Back Pain
+  Low Back Pain Undetermined
+  Low Hemoglobin
+  Lower Abdominal Pain
+  Lower Back Pain
+  Lower Chest Wall Pain
+  Lower Extremity Paraparesis
+  MISSING
+  Major trauma
+  Mandibular Pain
+  Medication
+  Medication Refill
+  Melena
+  Mental Change
+  Mental Confusion
+  Midmenstrual Pain
+  Mild Abdominal Pain
+  Mild Back Pain
+  Mild Cough
+  Mild Sore Throat
+  Minor Burn
+  Minor Laceration
+  Minor Rash
+  Minor skin irritation
+  Moderate pain
+  Mood Depression
+  Motor Weakness
+  Mouth Medication
+  Myalgia
+  Nasal Bleeding
+  Nasal Congestion
+  Nasal Injury
+  Nasal Swelling
+  Nausea
+  Near Syncope
+  Needle Stick Injury
+  Numbness
+  Numbness Arm
+  Occipital Area Headache
+  Ocular Injury Left
+  Ocular Pain
+  Ocular Pain Both
+  Ocular Pain Left
+  Ocular Pain Right
+  Oliguria
+  Open Wound
+  Oral Bleeding
+  Orthopnea
+  Otalgia Left
+  Otalgia Right
+  Pain Abdomen
+  Pain Abdominal
+  Pain Ankle
+  Pain Arm
+  Pain Back
+  Pain Chest
+  Pain Chest Wall
+  Pain Chest Wall Right
+  Pain Eye
+  Pain Facial
+  Pain Flank
+  Pain Foot
+  Pain Hand
+  Pain Hip
+  Pain Leg
+  Pain Low Back
+  Pain Neck
+  Pain Nus
+  Pain On Knee
+  Pain Periumbilical
+  Pain Shoulder
+  Pain Tooth
+  Painful Skin Lesion
+  Palpitation
+  Palpitations
+  Peg Tube Change
+  Pelvic Pain Left
+  Percutaneous Transhepatic Biliary Drain Leaukage
+  Percutaneous Transhepatic Biliary Drain Malfunction
+  Perm Cath Malfunction
+  Pneumothorax Pneumothorax
+  Posterior Cpr State
+  Posterior Neck Pain
+  Posterior Seizure
+  Prescription renewal
+  Preterm Premature Rupture Of Membranes
+  Rash
+  Retention Bladder
+  Right Abdominal Pain
+  Right Arm Weakness
+  Right Chest Pain
+  Right Elbow Pain
+  Right Flank Pain
+  Right Forearm Burn
+  Right Forearm Laceration
+  Right Hemiparesis
+  Right Hip Pain
+  Right Leg Injury
+  Right Lower Abdominal Pain
+  Right Lower Quadrant Abdominal Pain
+  Right Lower Quadrant Pain
+  Right Monoparesis
+  Right Motor Weakness
+  Right Nasal Bleeding
+  Right Ocular Pain
+  Right Shoulder Pain
+  Right Side Motor Weakness
+  Right Side Neck Pain
+  Right Side Numbness
+  Right Side Weakness
+  Right Upper Abdominal Pain
+  Right Upper Quadrant Pain
+  Rigth Side Weakness
+  Rotatory Vertigo
+  Routine check-up
+  Routine follow-up
+  Scalp Lac
+  Scratch Wound
+  Scrotal Pain
+  Seizure
+  Seizure Like Activity
+  Sensory Decreased
+  Severe Bleeding
+  Severe Headache
+  Severe Shortness of Breath
+  Severe abdominal pain
+  Severe bleeding
+  Severe chest pain
+  Severe respiratory distress
+  Sexual Abuse Of Adult
+  Sexual Violence
+  Sezure Like Motion
+  Shortness of Breath
+  Shoulder Pain
+  Shoulder Pain Both
+  Shoulder Pain Left
+  Shoulder Pain Right
+  Skin Defect
+  Skin Eruption
+  Skin Rash
+  Sleeping Tendency
+  Small Skin Wound
+  Sore Throat
+  Sorethroat
+  Stroke Symptoms
+  Sudden Hearing Loss
+  Suicidal Attempt
+  Suicidal Ideation
+  Suicidal Thoughts Finding
+  Swelling
+  Swelling Facial
+  Swelling Neck
+  Syncope
+  Tachycardia
+  Tapping
+  Temporomandibular Joint Pain
+  Testis Pain
+  Throat Pain
+  Toe Injury
+  Toe Pain
+  Toe Redness
+  Tooth Pain
+  Tooth Pain Left
+  Toothache
+  Tube Insertion
+  Unconsciousness
+  Unresponsive
+  Upper Abdominal Pain
+  Upper Back Pain
+  Urinary Frequency
+  Urinary Symptom Symptom
+  Urinary Symptoms
+  Urticarial Rash
+  Vaginal Bleeding
+  Vaginal Discharge
+  Vaginal Spotting
+  Visual Disturbance
+  Voice Changes
+  Voiding Difficulty
+  Voiding Failure
+  Voiding Pain
+  Vomiting
+  Watery Diarrhea
+  Weakness
+  Whirling Type Vertigo
+  Whole Body Skin Rash
+  With Chest Discomfort
+  Wrist Injury
+  Wrist Laceration
+  Wrist Pain
+  Wrist Pain Left
+  Wrist Pain Right
+
+NUMERIC INPUT RANGES:
+Age: min=1, max=98, missing=0
+Patients number per hour: min=1, max=19, missing=0
+NRS_pain: min=0, max=10, missing=0
+SBP: min=50, max=275, missing=0
+DBP: min=31, max=160, missing=0
+HR: min=25, max=186, missing=0
+RR: min=6, max=43, missing=0
+BT: min=34.0, max=41.2, missing=0
+Saturation: min=20, max=100, missing=0

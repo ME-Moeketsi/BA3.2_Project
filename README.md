@@ -156,7 +156,7 @@ Healthcare Staff
 
 **Under Development**
 
-The current development stage focuses on preparing the datasets, developing the machine-learning models, evaluating predictions, and integrating the AI/ML component into the wider Predict-Care AI system.
+The machine-learning models have been developed and evaluated, and work is underway to integrate them with a local language-understanding system. The current focus is on enabling the system to interpret user requests, trigger the appropriate predictions, and return clear, reliable responses without depending on an external language model.
 
 ## Scope
 

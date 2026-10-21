@@ -1,0 +1,3740 @@
+
+
+================================================================================
+FILE: GUI\GUI.py
+================================================================================
+import tkinter as tk
+from tkinter import ttk, messagebox
+from voice_assistant import start_voice_assistant
+import pythoncom
+
+# ==================================================
+# 1. MAIN WINDOW
+# ==================================================
+
+root = tk.Tk()
+root.title("AI triage estimation")
+root.geometry("1100x750")
+root.minsize(350, 450)
+root.configure(bg="#F1F5F9")
+root.resizable(True, True)
+
+# ==================================================
+# 2. COLORS AND SETTINGS
+# ==================================================
+
+BG = "#F1F5F9"
+WHITE = "#FFFFFF"
+PRIMARY = "#6366F1"
+PRIMARY_DARK = "#4F46E5"
+TEXT = "#1E293B"
+MUTED = "#64748B"
+BORDER = "#DCE4F0"
+SELECTED_BG = "#EEF2FF"
+
+# Minimum preferred width of each container.
+MIN_CARD_WIDTH = 280
+
+# Store input variables and container frames.
+inputs = {}
+container_cards = []
+
+
+# ==================================================
+# RIGHT-SIDE CONTAINER WITH 3 EQUAL SECTIONS
+# ==================================================
+
+right_container = tk.Frame(
+    root,
+    bg=BG,
+    highlightbackground=BORDER,
+    highlightthickness=1
+)
+
+right_container.place(
+    relx=1.0,
+    rely=0.5,
+    relwidth=0.25,
+    relheight=0.90,
+    x=-15,
+    anchor="e"
+)
+
+# Configure three equally sized containers.
+right_container.grid_columnconfigure(0, weight=1)
+
+for row in range(3):
+    right_container.grid_rowconfigure(row, weight=1, uniform="right_sections")
+
+# Create the three sections.
+right_sections = []
+
+for i in range(3):
+    section = tk.Frame(
+        right_container,
+        bg=WHITE,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        padx=10,
+        pady=10
+    )
+
+    section.grid(
+        row=i,
+        column=0,
+        sticky="nsew",
+        padx=6,
+        pady=6
+    )
+
+    right_sections.append(section)
+
+# Optional headings for each section.
+section_titles = [
+    "Patient Sumary",
+    "Calculated Triage Level",
+    "Estimated Waiting Time"
+]
+
+for section, title in zip(right_sections, section_titles):
+    tk.Label(
+        section,
+        text=title,
+        font=("Segoe UI", 12, "bold"),
+        bg=WHITE,
+        fg=TEXT,
+        anchor="w"
+    ).pack(
+        fill="x"
+    )
+
+
+# ==================================================
+# PATIENT SUMMARY DISPLAY
+# ==================================================
+
+summary_label = tk.Label(
+    right_sections[0],
+    text="Patient Summary\n\nComplete the form and click Continue.",
+    font=("Segoe UI", 10),
+    bg=WHITE,
+    fg=TEXT,
+    anchor="nw",
+    justify="left",
+    wraplength=220
+)
+
+summary_label.pack(
+    fill="both",
+    expand=True,
+    anchor="nw",
+    padx=5,
+    pady=10
+)
+def resize_summary(event):
+    summary_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[0].bind(
+    "<Configure>",
+    resize_summary
+)
+
+
+# ==================================================
+# CALCULATE BUTTON - SECOND RIGHT-SIDE CONTAINER
+# ==================================================
+calculate_label = tk.Label(
+right_sections[1],
+text="Calculate only after all patient information has been entered"
+)
+
+calculate_label.pack(
+    fill="both",
+    expand= True,
+    anchor="nw",
+    padx=5,
+    pady=10
+ )
+def resize_calculate(event):
+    calculate_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[1].bind(
+    "<Configure>",
+    resize_calculate
+)
+
+
+
+calculate_button = tk.Button(
+    right_sections[1],
+    text="Calculate 🧮",
+    font=("Segoe UI", 11, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    borderwidth=0,
+    cursor="hand2",
+    padx=20,
+    pady=10,
+    command=lambda: print("Calculate button clicked")
+)
+
+calculate_button.pack(
+    fill="x",
+    padx=12,
+    pady=12
+)
+
+
+
+
+
+
+# ==================================================
+# VOICE ASSESSMENT BUTTON
+# ==================================================
+
+voice_status = tk.Label(
+    right_sections[0],
+    text="Ready for voice assessment",
+    font=("Segoe UI", 9),
+    bg=WHITE,
+    fg=MUTED,
+    wraplength=200
+)
+
+voice_status.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
+
+
+voice_session = None
+
+
+def update_voice_status(message):
+    voice_status.configure(text=message)
+
+
+def begin_voice_assessment():
+    global voice_session
+
+    voice_button.configure(state="disabled")
+
+    voice_session = start_voice_assistant(
+        root,
+        inputs,
+        on_status=update_voice_status
+    )
+
+    # Allow another interview after the current one finishes.
+    # Re-enable manually after completion if desired.
+
+voice_button = tk.Button(
+    right_sections[0],
+    text="Start Voice Assessment 🎤 ",
+    command=begin_voice_assessment,
+    font=("Segoe UI", 10, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    cursor="hand2",
+    padx=10,
+    pady=10
+)
+
+voice_button.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
+
+# ==================================================
+# 3. SCROLLABLE CONTENT AREA
+# ==================================================
+
+content_area = tk.Frame(root, bg=BG)
+
+content_area.place(
+    relx=0.0,
+    rely=0.0,
+    relwidth=0.73,
+    relheight=0.90,
+    x=12,
+    y=12
+)
+
+# Canvas makes it possible to scroll through the cards.
+canvas = tk.Canvas(
+    content_area,
+    bg=BG,
+    highlightthickness=0,
+    borderwidth=0
+)
+
+# Vertical scrollbar connected to the canvas.
+scrollbar = ttk.Scrollbar(
+    content_area,
+    orient="vertical",
+    command=canvas.yview
+)
+
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+# All containers will be placed inside this frame.
+scroll_frame = tk.Frame(canvas, bg=BG)
+
+canvas_window = canvas.create_window(
+    (0, 0),
+    window=scroll_frame,
+    anchor="nw"
+)
+
+# ==================================================
+# 4. SCROLLING FUNCTIONS
+# ==================================================
+
+def update_scroll_region(event=None):
+    """Update the area that can be scrolled."""
+
+    canvas.configure(
+        scrollregion=canvas.bbox("all")
+    )
+
+
+def resize_content(event):
+    """Resize the content and rearrange the containers."""
+
+    canvas.itemconfigure(
+        canvas_window,
+        width=event.width
+    )
+
+    arrange_containers(event.width)
+
+
+# Update scrolling when the content changes.
+scroll_frame.bind(
+    "<Configure>",
+    update_scroll_region
+)
+
+# Rearrange the cards when the window is resized.
+canvas.bind(
+    "<Configure>",
+    resize_content
+)
+
+
+def on_mousewheel(event):
+    """Scroll the form with the mouse wheel."""
+
+    if event.num == 4:
+        # Linux: scroll upward.
+        canvas.yview_scroll(-1, "units")
+
+    elif event.num == 5:
+        # Linux: scroll downward.
+        canvas.yview_scroll(1, "units")
+
+    elif event.delta:
+        # Windows and macOS mouse-wheel support.
+        canvas.yview_scroll(
+            int(-event.delta / 120),
+            "units"
+        )
+
+
+def bind_mousewheel(widget):
+    """Enable mouse-wheel scrolling over child widgets."""
+
+    widget.bind("<MouseWheel>", on_mousewheel)
+    widget.bind("<Button-4>", on_mousewheel)
+    widget.bind("<Button-5>", on_mousewheel)
+
+    for child in widget.winfo_children():
+        bind_mousewheel(child)
+
+
+# ==================================================
+# 5. CUSTOM RADIO INDICATOR
+# ==================================================
+
+def draw_radio(radio_canvas, selected):
+    """Draw a custom radio circle using a Canvas."""
+
+    radio_canvas.delete("all")
+
+    # Draw the outer circle.
+    radio_canvas.create_oval(
+        3, 3, 19, 19,
+        outline=PRIMARY if selected else "#94A3B8",
+        width=2,
+        fill=WHITE
+    )
+
+    # Draw the inner circle when selected.
+    if selected:
+        radio_canvas.create_oval(
+            8, 8, 14, 14,
+            outline=PRIMARY,
+            fill=PRIMARY
+        )
+
+
+# ==================================================
+# 6. REUSABLE CONTAINER CREATOR
+# ==================================================
+
+def create_container(container_id, title, subtitle):
+    """Create a modern card with a heading and input area."""
+
+    # Main white container.
+    card = tk.Frame(
+        scroll_frame,
+        bg=WHITE,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        padx=16,
+        pady=16
+    )
+
+    # Save the card for responsive layout.
+    container_cards.append(card)
+
+    card.grid_columnconfigure(0, weight=1)
+
+    # Container title.
+    tk.Label(
+        card,
+        text=title,
+        font=("Segoe UI", 15, "bold"),
+        bg=WHITE,
+        fg=TEXT,
+        anchor="w"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="ew",
+        pady=(0, 6)
+    )
+
+    # Container description.
+    tk.Label(
+        card,
+        text=subtitle,
+        font=("Segoe UI", 9),
+        bg=WHITE,
+        fg=MUTED,
+        anchor="w",
+        justify="left",
+        wraplength=300
+    ).grid(
+        row=1,
+        column=0,
+        sticky="ew",
+        pady=(0, 14)
+    )
+
+    # Area where input widgets will be placed.
+    body = tk.Frame(card, bg=WHITE)
+
+    body.grid(
+        row=2,
+        column=0,
+        sticky="nsew"
+    )
+
+    card.grid_rowconfigure(2, weight=1)
+
+    return card, body
+
+
+# ==================================================
+# 7. CUSTOM RADIO BUTTON GROUP
+# ==================================================
+
+def create_radio_group(parent, options, variable):
+    """Create a group of clickable custom radio cards."""
+
+    widgets = []
+
+    def refresh():
+        """Update the appearance of every radio option."""
+
+        for title, frame, indicator, description in widgets:
+
+            selected = variable.get() == title
+
+            background = (
+                SELECTED_BG if selected else WHITE
+            )
+
+            # Highlight the selected card.
+            frame.configure(
+                bg=background,
+                highlightbackground=(
+                    PRIMARY if selected else BORDER
+                )
+            )
+
+            indicator.configure(bg=background)
+            description.configure(bg=background)
+
+            # Redraw the radio indicator.
+            draw_radio(indicator, selected)
+
+    def select_option(title):
+        """Save the selected option and refresh the group."""
+
+        variable.set(title)
+        refresh()
+            # Refresh the radio cards whenever the variable changes,
+    # including when the voice assistant updates it.
+    variable.trace_add(
+        "write",
+        lambda *_: refresh()
+    )
+
+    for title, description in options:
+
+        # Frame for one radio option.
+        option_card = tk.Frame(
+            parent,
+            bg=WHITE,
+            highlightbackground=BORDER,
+            highlightthickness=1,
+            padx=8,
+            pady=7,
+            cursor="hand2"
+        )
+
+        option_card.pack(
+            fill="x",
+            pady=3
+        )
+
+        option_card.grid_columnconfigure(1, weight=1)
+
+        # Custom radio circle.
+        indicator = tk.Canvas(
+            option_card,
+            width=22,
+            height=22,
+            bg=WHITE,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+
+        indicator.grid(
+            row=0,
+            column=0,
+            rowspan=2,
+            padx=(0, 7)
+        )
+
+        # Option title.
+        title_label = tk.Label(
+            option_card,
+            text=title,
+            font=("Segoe UI", 10, "bold"),
+            bg=WHITE,
+            fg=TEXT,
+            anchor="w",
+            cursor="hand2"
+        )
+
+        title_label.grid(
+            row=0,
+            column=1,
+            sticky="ew"
+        )
+
+        # Option description.
+        description_label = tk.Label(
+            option_card,
+            text=description,
+            font=("Segoe UI", 8),
+            bg=WHITE,
+            fg=MUTED,
+            anchor="w",
+            cursor="hand2"
+        )
+
+        description_label.grid(
+            row=1,
+            column=1,
+            sticky="ew"
+        )
+
+        widgets.append(
+            (
+                title,
+                option_card,
+                indicator,
+                description_label
+            )
+        )
+
+        # Clicking anywhere on the card selects the option.
+        for widget in (
+            option_card,
+            indicator,
+            title_label,
+            description_label
+        ):
+            widget.bind(
+                "<Button-1>",
+                lambda event, t=title: select_option(t)
+            )
+
+    # Display the initial selection.
+    refresh()
+    # ==================================================
+# 8. CONTAINER 1: SEX
+# ==================================================
+
+sex_card, sex_body = create_container(
+    "Sex",
+    "Sex",
+    "Choose the Sex of the patient."
+)
+
+# Store the selected category.
+sex_value = tk.StringVar(value="Personal")
+inputs["sex"] = sex_value
+
+# Create four custom radio options.
+create_radio_group(
+    sex_body,
+    [
+        ("Male", ""),
+        ("Female", ""),
+
+    ],
+    sex_value
+)
+
+
+# ==================================================
+# 9. CONTAINER 2: Age
+# ==================================================
+
+age_card, age_body = create_container(
+    "Age",
+    "Age of the Patient",
+    "Enter the age of the patient."
+)
+
+tk.Label(
+    age_body,
+    text="Age of Patient",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the selected quantity.
+age_value = tk.IntVar(value=1)
+
+# Spinbox lets the user choose a number from 1 to 100.
+age_selector = tk.Spinbox(
+    age_body,
+    from_=1,
+    to=100,
+    textvariable=age_value,
+    font=("Segoe UI", 11),
+    relief="solid",
+    bd=1,
+    width=10
+)
+
+age_selector.pack(
+    anchor="w",
+    ipady=5
+)
+
+inputs["age"] = age_value
+
+
+# ==================================================
+# 10. CONTAINER 3: Injury Status
+# ==================================================
+
+Injury_card, Injury_body = create_container(
+    "Injury",
+    "Injury status",
+    "Enter the Patient's Injury Status."
+)
+
+# Store the selected billing cycle.
+Injury_value = tk.StringVar(value="")
+inputs["injury"] = Injury_value
+
+create_radio_group(
+    Injury_body,
+    [
+        ("True", "There is a visible injury"),
+        ("False", "There is no visible injury"),
+
+    ],
+    Injury_value
+)
+
+
+# ==================================================
+# 11. CONTAINER 4: Chief Complain
+# ==================================================
+
+Complain_card, Complain_body = create_container(
+    "Complain",
+    "Chief Complain",
+    "Enter Paitiens Chief complain."
+)
+
+# ------------------------------
+# Complain field
+# ------------------------------
+
+tk.Label(
+    Complain_body,
+    text="Your message",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 7)
+)
+
+# A multiline text box for longer messages.
+Complain_text = tk.Text(
+    Complain_body,
+    height=5,
+    font=("Segoe UI", 10),
+    wrap="word",
+    relief="solid",
+    bd=1,
+    highlightthickness=1,
+    highlightbackground=BORDER,
+    highlightcolor=PRIMARY,
+    padx=8,
+    pady=8
+)
+
+Complain_text.pack(
+    fill="both",
+    expand=True
+)
+
+inputs["complain"] = Complain_text
+
+
+# ==================================================
+# 12. CONTAINER 5: Pain
+# ==================================================
+
+Pain_card, Pain_body = create_container(
+    "Pain",
+    "Patient's Pain",
+    "Confirm if Patient is in pain."
+)
+
+# Store the selected Option.
+Pain_value = tk.StringVar(value="")
+inputs["pain"] = Pain_value
+
+create_radio_group(
+    Pain_body,
+    [
+        ("True", "The patient is in pain"),
+        ("False", "The patient is not in pain"),
+
+    ],
+    Pain_value
+)
+
+
+# ==================================================
+# 13. CONTAINER 6: Nurse Assessment
+# ==================================================
+
+NA_card, NA_body = create_container(
+    "Nurse Assessment",
+    "Nurse Assesment",
+    "Enter the Nurse's Assesment ."
+)
+
+tk.Label(
+    NA_body,
+    text="Assessment",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the dropdown selection.
+NA_value = tk.StringVar(value="")
+
+# Create a dropdown menu.
+NA_dropdown = ttk.Combobox(
+    NA_body,
+    textvariable=NA_value,
+    values=[
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "Level 4"
+    ],
+    state="readonly",
+    font=("Segoe UI", 10)
+)
+
+NA_dropdown.pack(
+    fill="x",
+    ipady=5
+)
+
+inputs["na"] = NA_value
+
+
+# ==================================================
+# 14. CONTAINER 7: Body Temprature
+# ==================================================
+
+BT_card, BT_body = create_container(
+    "Temprature",
+    "Body Temprature",
+    "Enter the patient's body Temprature."
+)
+
+tk.Label(
+    BT_body,
+    text="Temprature",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the selected quantity.
+BT_value = tk.IntVar(value=1)
+
+# Spinbox lets the user choose a number from 1 to 100.
+BT_selector = tk.Spinbox(
+    BT_body,
+    from_=1,
+    to=100,
+    textvariable=BT_value,
+    font=("Segoe UI", 11),
+    relief="solid",
+    bd=1,
+    width=10
+)
+
+BT_selector.pack(
+    anchor="w",
+    ipady=5
+)
+
+inputs["bt"] = BT_value
+
+
+# ==================================================
+# 15. CONTAINER 8: Mental State
+# ==================================================
+
+MS_card, MS_body = create_container(
+    "Mental State",
+    "Patient's Mental state",
+    "Select the patients Mental State."
+)
+
+# Store the selected Option.
+MS_value = tk.StringVar(value="")
+inputs["ms"] = MS_value
+
+create_radio_group(
+    MS_body,
+    [
+        ("Level 1", " The patient is Alert"),
+        ("Level 2", "The patient has a Verbal Response"),
+        ("Level 3", "The patient has aPain response"),
+        ("Level 4", "The patient has no response"),
+
+    ],
+    MS_value
+)
+
+
+# ==================================================
+# 16. RESPONSIVE CONTAINER LAYOUT
+# ==================================================
+
+def arrange_containers(available_width):
+    """
+    Arrange containers according to the available width.
+
+    Narrow window: one column.
+    Medium window: two columns.
+    Wide window: three columns.
+    """
+
+    if not container_cards:
+        return
+
+    # Determine how many cards can fit horizontally.
+    columns = max(
+        1,
+        min(
+            3,
+            int(
+                (available_width + 12)
+                / (MIN_CARD_WIDTH + 12)
+            )
+        )
+    )
+
+    # Configure the grid columns.
+    for column in range(3):
+        scroll_frame.grid_columnconfigure(
+            column,
+            weight=1 if column < columns else 0,
+            uniform="cards" if column < columns else ""
+        )
+
+    # Place each container in the appropriate row and column.
+    for index, card in enumerate(container_cards):
+
+        row = index // columns
+        column = index % columns
+
+        card.grid(
+            row=row,
+            column=column,
+            sticky="nsew",
+            padx=6,
+            pady=6
+        )
+
+    # Refresh the scrollable area after rearranging.
+    root.after_idle(update_scroll_region)
+    # ==================================================
+# 17. CONTINUE BUTTON ACTION
+# ==================================================
+
+def continue_action():
+    """Collect, validate, and display the form information."""
+
+    # ----------------------------------------------
+    # Read the radio button selections.
+    # ----------------------------------------------
+
+    sex = inputs["sex"].get()
+    injury = inputs["injury"].get()
+    pain = inputs["pain"].get()
+    ms = inputs["ms"].get()
+
+    # ----------------------------------------------
+    # Read the Chief Complain.
+    # ----------------------------------------------
+
+    complain = inputs["complain"].get("1.0", "end-1c").strip()
+   
+
+ 
+    # ----------------------------------------------
+    # Read the dropdown selection.
+    # ----------------------------------------------
+
+    na = inputs["na"].get()
+
+    # ----------------------------------------------
+    # Validate the numbers.
+    # ----------------------------------------------
+
+    try:
+        age = int(inputs["age"].get())
+
+        if not 1 <= age <= 100:
+            raise ValueError
+
+    except (ValueError, tk.TclError):
+        messagebox.showwarning(
+            "Invalid Quantity",
+            "Please enter a quantity between 1 and 100."
+        )
+        return
+    try:
+             bt = int(inputs["bt"].get())
+     
+             if not 1 <= bt <= 100:
+                 raise ValueError
+     
+    except (ValueError, tk.TclError):
+             messagebox.showwarning(
+                 "Invalid Quantity",
+                 "Please enter a quantity between 1 and 100."
+             )
+             return
+    
+  
+    # ----------------------------------------------
+    # Check required radio button selections.
+    # ----------------------------------------------
+
+    missing = []
+
+    if not sex:
+        missing.append("sex")
+
+    if not injury:
+        missing.append("injury")
+
+    if not pain:
+        missing.append("pain")
+        
+    if not ms:
+        missing.append("ms")
+
+    if missing:
+        messagebox.showwarning(
+            "Incomplete Form",
+            "Please complete the following selections:\n\n"
+            + "\n".join(missing)
+        )
+        return
+
+ 
+
+    # ----------------------------------------------
+    # Build the submission summary.
+    # ----------------------------------------------
+
+    summary = (
+        f"Patient Sex: {sex}\n"
+        f"Patient Age: {age}\n"
+        f"Injury Status: {injury}\n"
+        f"Chief Complain: {complain}\n"
+        f"Pain: {pain }\n"
+        f"Nurse Assesment: {na}\n"
+        f"Body Temprature: {bt}\n"
+        f"Mental State: {ms}"
+    )
+
+    # ----------------------------------------------
+    # Display the submitted information.
+    # ----------------------------------------------
+       # Display the summary in the first right-side sub-container.
+    summary_label.configure(
+    text="Patient Summary\n\n" + summary
+    )
+
+
+
+
+# ==================================================
+# 18. FIXED BOTTOM BUTTON
+# ==================================================
+
+# This frame is outside the scrollable canvas.
+# Therefore, the button stays visible while scrolling.
+
+bottom_area = tk.Frame(
+    root,
+    bg=BG
+)
+
+bottom_area.pack(
+    side="bottom",
+    fill="x",
+    padx=12,
+    pady=(5, 16)
+)
+
+# Create the Continue button.
+continue_button = tk.Button(
+    bottom_area,
+    text="Continue  →",
+    command=continue_action,
+    font=("Segoe UI", 11, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    borderwidth=0,
+    cursor="hand2",
+    padx=35,
+    pady=10
+)
+
+# Keep the button centered horizontally.
+continue_button.pack(
+    anchor="center"
+)
+
+
+# ==================================================
+# 19. INITIALIZE THE APPLICATION
+# ==================================================
+
+# Calculate the initial window dimensions.
+root.update_idletasks()
+
+# Arrange the containers based on the available width.
+arrange_containers(
+    canvas.winfo_width()
+)
+
+# Enable mouse-wheel scrolling over the content.
+bind_mousewheel(scroll_frame)
+
+# Start the Tkinter event loop.
+root.mainloop()
+
+
+================================================================================
+FILE: NLP\ktas_input_menu.py
+================================================================================
+
+import speech_recognition as sr
+from predict_ktas import predict_ktas
+
+
+# ----- SPEECH INPUT FUNCTION -----
+def get_speech_input():
+    recognizer = sr.Recognizer()
+
+    # Working microphone on your laptop
+    microphone = sr.Microphone(device_index=1)
+
+    try:
+        with microphone as source:
+            print("\nMicrophone ready.")
+            input("Press Enter when you are ready to speak...")
+
+            print("Recording for 10 seconds. Speak now!")
+            audio = recognizer.record(source, duration=10)
+
+        print("\nConverting speech to text...")
+
+        complaint = recognizer.recognize_google(
+            audio,
+            language="en-ZA"
+        )
+
+        print(f"\nRecognized Complaint: {complaint}")
+
+        return complaint
+
+    except sr.UnknownValueError:
+        print("Speech could not be understood.")
+        return None
+
+    except sr.RequestError as error:
+        print("Speech recognition service error:", error)
+        return None
+
+    except (OSError, AttributeError) as error:
+        print("Microphone error:", error)
+        return None
+
+
+# ----- MAIN PROGRAM -----
+def main():
+    print("\n================================")
+    print("         PREDICT-CARE AI")
+    print("   NLP Patient Triage Support")
+    print("================================")
+
+    while True:
+        print("\nChoose input method:")
+        print("1. Enter complaint using text")
+        print("2. Enter complaint using speech")
+        print("3. Exit")
+
+        choice = input("\nEnter your choice (1-3): ").strip()
+
+        if choice == "1":
+            complaint = input(
+                "\nEnter patient chief complaint: "
+            ).strip()
+
+        elif choice == "2":
+            complaint = get_speech_input()
+
+        elif choice == "3":
+            print("\nExiting Predict-Care AI.")
+            break
+
+        else:
+            print("\nInvalid choice. Please select 1, 2 or 3.")
+            continue
+
+        if not complaint:
+            print("\nNo complaint received. Please try again.")
+            continue
+
+        # ----- MAKE KTAS PREDICTION -----
+        predicted_ktas, emergency_category = predict_ktas(
+            complaint
+        )
+
+        # ----- DISPLAY RESULT -----
+        print("\nPREDICTION RESULT")
+        print("-----------------")
+        print(f"Chief Complaint: {complaint}")
+        print(f"Predicted KTAS Level: {predicted_ktas}")
+        print(f"Emergency Category: {emergency_category}")
+
+        print(
+            "\nNote: This prediction is for decision-support only "
+            "and does not replace professional clinical assessment."
+        )
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: time_series.py
+================================================================================
+"""
+Predict-Care AI
+Time-Series Analysis
+
+Purpose:
+    Analyse patient demand over time and evaluate simple
+    time-series forecasting models.
+
+The model is evaluated by hiding the final part of each
+scenario and asking the model to predict those observations.
+
+This avoids treating the end of the simulation as normal
+future patient demand.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
+"""
+
+# Here I am importing the tools I need for my time-series analysis.
+import os
+import joblib
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Here I am importing the time-series models I will compare.
+from statsmodels.tsa.holtwinters import (
+    SimpleExpSmoothing,
+    Holt
+)
+
+# Here I am importing the error measurements I use to evaluate
+# how close my predictions are to the actual patient counts.
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+DATA_DIR = "Data"
+MODEL_DIR = "Models"
+RESULTS_DIR = "Results"
+
+DATASET_FILE = os.path.join(
+    DATA_DIR,
+    "patient_flow_timeseries.csv"
+)
+
+MODEL_FILE = os.path.join(
+    MODEL_DIR,
+    "time_series_model.pkl"
+)
+
+EVALUATION_FILE = os.path.join(
+    RESULTS_DIR,
+    "time_series_evaluation.csv"
+)
+
+PLOT_FILE = os.path.join(
+    RESULTS_DIR,
+    "time_series_evaluation.png"
+)
+
+# Here I choose patient count as my main time-series variable.
+VALUE_COLUMN = "patient_count"
+
+# Here I use 60% of each scenario for training and 30% for testing.
+TRAIN_RATIO = 0.60
+TEST_RATIO = 0.30
+
+
+# ============================================================
+# DIRECTORY SETUP
+# ============================================================
+
+def create_directories():
+
+    # Here I make sure my required folders exist.
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+
+# ============================================================
+# DATA LOADING
+# ============================================================
+
+def load_time_series_data():
+
+    # Here I check that my time-series dataset exists.
+    if not os.path.exists(DATASET_FILE):
+        raise FileNotFoundError(
+            f"Dataset not found: {DATASET_FILE}"
+        )
+
+    # Here I load the CSV file into a pandas DataFrame.
+    data = pd.read_csv(DATASET_FILE)
+
+    # Here I convert DateTime into a proper date/time value.
+    data["DateTime"] = pd.to_datetime(
+        data["DateTime"]
+    )
+
+    # Here I arrange the observations chronologically.
+    data = data.sort_values(
+        ["Scenario", "DateTime"]
+    ).reset_index(drop=True)
+
+    print("\n========== TIME-SERIES DATA ==========")
+
+    print(f"Records: {len(data)}")
+    print(f"Scenarios: {data['Scenario'].nunique()}")
+
+    print(
+        f"Date range: "
+        f"{data['DateTime'].min()} "
+        f"to "
+        f"{data['DateTime'].max()}"
+    )
+
+    print("\nRecords per scenario:")
+
+    print(
+        data["Scenario"]
+        .value_counts()
+        .sort_index()
+    )
+
+    return data
+
+
+# ============================================================
+# BASIC ANALYSIS
+# ============================================================
+
+def analyse_data(data):
+
+    # Here I calculate the average patient count for each scenario.
+    average_patients = (
+        data.groupby("Scenario")[VALUE_COLUMN]
+        .mean()
+        .sort_values(ascending=False)
+    )
+
+    print("\nAverage patient count:")
+
+    print(
+        average_patients
+        .round(2)
+    )
+
+    # Here I also look at average waiting time because it gives
+    # useful operational context for the patient-demand series.
+    if "avg_total_wait" in data.columns:
+
+        average_wait = (
+            data.groupby("Scenario")["avg_total_wait"]
+            .mean()
+            .sort_values(ascending=False)
+        )
+
+        print("\nAverage waiting time:")
+
+        print(
+            average_wait
+            .round(2)
+        )
+
+
+# ============================================================
+# MODEL EVALUATION
+# ============================================================
+
+def evaluate_models(train, test):
+
+    # Here I train a Simple Exponential Smoothing model.
+    ses_model = SimpleExpSmoothing(
+        train,
+        initialization_method="estimated"
+    ).fit()
+
+    # Here I predict the same number of observations that
+    # exist in my hidden test set.
+    ses_prediction = ses_model.forecast(
+        len(test)
+    )
+
+    # Here I make sure patient counts cannot become negative.
+    ses_prediction = np.maximum(
+        ses_prediction,
+        0
+    )
+
+    # Here I calculate the SES errors.
+    ses_mae = mean_absolute_error(
+        test,
+        ses_prediction
+    )
+
+    ses_rmse = np.sqrt(
+        mean_squared_error(
+            test,
+            ses_prediction
+        )
+    )
+
+
+    # Here I train a Holt trend model.
+    holt_model = Holt(
+        train,
+        initialization_method="estimated"
+    ).fit()
+
+    # Here I predict the hidden test period using Holt.
+    holt_prediction = holt_model.forecast(
+        len(test)
+    )
+
+    # Here I make sure Holt cannot produce negative patient counts.
+    holt_prediction = np.maximum(
+        holt_prediction,
+        0
+    )
+
+    # Here I calculate the Holt errors.
+    holt_mae = mean_absolute_error(
+        test,
+        holt_prediction
+    )
+
+    holt_rmse = np.sqrt(
+        mean_squared_error(
+            test,
+            holt_prediction
+        )
+    )
+
+
+    # Here I compare the two models using MAE.
+    if ses_mae <= holt_mae:
+
+        selected_model = "Simple Exponential Smoothing"
+        selected_prediction = ses_prediction
+        selected_mae = ses_mae
+        selected_rmse = ses_rmse
+
+    else:
+
+        selected_model = "Holt Trend"
+        selected_prediction = holt_prediction
+        selected_mae = holt_mae
+        selected_rmse = holt_rmse
+
+
+    return {
+        "ses_mae": ses_mae,
+        "ses_rmse": ses_rmse,
+        "holt_mae": holt_mae,
+        "holt_rmse": holt_rmse,
+        "selected_model": selected_model,
+        "selected_prediction": selected_prediction,
+        "selected_mae": selected_mae,
+        "selected_rmse": selected_rmse
+    }
+
+
+# ============================================================
+# TIME-SERIES ANALYSIS
+# ============================================================
+
+def run_time_series_analysis():
+
+    # Here I make sure my folders are ready.
+    create_directories()
+
+    # Here I load my patient-flow time-series dataset.
+    data = load_time_series_data()
+
+    # Here I display basic information about the data.
+    analyse_data(data)
+
+    all_results = []
+    saved_models = {}
+
+    plot_data = []
+
+
+    # Here I analyse each scenario independently.
+    for scenario in data["Scenario"].unique():
+
+        print("\n" + "=" * 60)
+        print(f"SCENARIO: {scenario}")
+        print("=" * 60)
+
+        scenario_data = (
+            data[data["Scenario"] == scenario]
+            .sort_values("DateTime")
+            .copy()
+        )
+
+        # Here I extract the patient-count time series.
+        series = (
+            scenario_data
+            .set_index("DateTime")[VALUE_COLUMN]
+            .astype(float)
+        )
+
+        # Here I calculate the training size.
+        # Here I calculate how many observations I will use for training.
+        train_size = int(
+            len(series) * TRAIN_RATIO
+        )
+        
+        # Here I calculate how many observations I will use for testing.
+        test_size = int(
+            len(series) * TEST_RATIO
+        )
+        
+        # I make sure there are enough observations for both sections.
+        if train_size < 2 or test_size < 1:
+        
+            print(
+                "Not enough observations for train/test evaluation."
+            )
+            continue
+        
+        # Here I split the time series chronologically.
+        # I do NOT randomly shuffle time-series observations.
+        train = series.iloc[:train_size]
+        
+        # Here I use the next 30% as my unseen test data.
+        test = series.iloc[
+            train_size:train_size + test_size
+        ]
+        
+        # The remaining observations represent the end of the
+        # simulation, so I exclude them from model evaluation.
+        excluded = series.iloc[
+            train_size + test_size:
+        ]
+        
+        print(f"Total observations: {len(series)}")
+        print(f"Training observations: {len(train)}")
+        print(f"Testing observations: {len(test)}")
+        print(f"Excluded shutdown observations: {len(excluded)}")
+
+        # Here I compare my two forecasting approaches.
+        results = evaluate_models(
+            train,
+            test
+        )
+
+        print("\nModel comparison:")
+
+        print(
+            f"Simple Exponential Smoothing "
+            f"MAE: {results['ses_mae']:.2f}, "
+            f"RMSE: {results['ses_rmse']:.2f}"
+        )
+
+        print(
+            f"Holt Trend "
+            f"MAE: {results['holt_mae']:.2f}, "
+            f"RMSE: {results['holt_rmse']:.2f}"
+        )
+
+        print(
+            f"\nSelected model: "
+            f"{results['selected_model']}"
+        )
+
+        print(
+            f"Selected MAE: "
+            f"{results['selected_mae']:.2f}"
+        )
+
+        print(
+            f"Selected RMSE: "
+            f"{results['selected_rmse']:.2f}"
+        )
+
+
+        # ====================================================
+        # SAVE TEST PREDICTIONS
+        # ====================================================
+
+        selected_prediction = pd.Series(
+            results["selected_prediction"],
+            index=test.index
+        )
+
+        # Here I save the actual and predicted values so I can
+        # inspect exactly how my model performed.
+        for index in test.index:
+
+            all_results.append({
+                "Scenario": scenario,
+                "DateTime": index,
+                "Actual_Patient_Count": test.loc[index],
+                "Predicted_Patient_Count": selected_prediction.loc[index],
+                "Model": results["selected_model"],
+                "MAE": results["selected_mae"],
+                "RMSE": results["selected_rmse"]
+            })
+
+
+        # ====================================================
+        # REFIT SELECTED MODEL ON ALL AVAILABLE DATA
+        # ====================================================
+
+        # After evaluation, I train the selected approach using
+        # the complete scenario. This saved model can later be
+        # used by the Predict-Care system.
+        if results["selected_model"] == "Simple Exponential Smoothing":
+
+            final_model = SimpleExpSmoothing(
+                series,
+                initialization_method="estimated"
+            ).fit()
+
+        else:
+
+            final_model = Holt(
+                series,
+                initialization_method="estimated"
+            ).fit()
+
+
+        saved_models[scenario] = {
+            "model": results["selected_model"],
+            "fitted_model": final_model,
+            "value_column": VALUE_COLUMN
+        }
+
+
+        # Here I store information needed for the evaluation graph.
+        plot_data.append({
+            "scenario": scenario,
+            "series": series,
+            "train": train,
+            "test": test,
+            "prediction": selected_prediction,
+            "model": results["selected_model"]
+        })
+
+
+    # ========================================================
+    # SAVE EVALUATION RESULTS
+    # ========================================================
+
+    evaluation_data = pd.DataFrame(
+        all_results
+    )
+
+    evaluation_data.to_csv(
+        EVALUATION_FILE,
+        index=False
+    )
+
+    print(
+        f"\nEvaluation results saved to: "
+        f"{EVALUATION_FILE}"
+    )
+
+
+    # ========================================================
+    # SAVE MODELS
+    # ========================================================
+
+    joblib.dump(
+        saved_models,
+        MODEL_FILE
+    )
+
+    print(
+        f"Models saved to: "
+        f"{MODEL_FILE}"
+    )
+
+
+    # ========================================================
+    # CREATE EVALUATION GRAPH
+    # ========================================================
+
+    create_evaluation_plot(
+        plot_data
+    )
+
+    return evaluation_data
+
+
+# ============================================================
+# VISUALISATION
+# ============================================================
+
+def create_evaluation_plot(plot_data):
+
+    # Here I create one graph for each scenario so that the
+    # actual and predicted test values are easy to see.
+    number_of_plots = len(plot_data)
+
+    rows = 3
+    columns = 2
+
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(16, 12),
+        sharey=False
+    )
+
+    axes = axes.flatten()
+
+    for position, item in enumerate(plot_data):
+
+        ax = axes[position]
+
+        scenario = item["scenario"]
+        train = item["train"]
+        test = item["test"]
+        prediction = item["prediction"]
+        model = item["model"]
+
+        # Here I plot the training observations.
+        ax.plot(
+            train.index,
+            train.values,
+            marker="o",
+            label="Training Data"
+        )
+
+        # Here I plot the actual unseen test observations.
+        ax.plot(
+            test.index,
+            test.values,
+            marker="o",
+            label="Actual Test Data"
+        )
+
+        # Here I plot what my selected model predicted
+        # for those unseen observations.
+        ax.plot(
+            prediction.index,
+            prediction.values,
+            marker="x",
+            linestyle="--",
+            label="Forecast"
+        )
+
+        ax.axvline(
+            test.index[0],
+            linestyle=":",
+            label="Test Start"
+        )
+
+        ax.set_title(
+            scenario
+        )
+
+        ax.set_xlabel(
+            "Date and Time"
+        )
+
+        ax.set_ylabel(
+            "Patient Count"
+        )
+
+        ax.tick_params(
+            axis="x",
+            rotation=45
+        )
+
+        ax.grid(
+            True,
+            alpha=0.3
+        )
+
+        ax.legend(
+            fontsize=8
+        )
+
+
+    # If there are unused subplot positions, I remove them.
+    for position in range(
+        len(plot_data),
+        len(axes)
+    ):
+
+        fig.delaxes(
+            axes[position]
+        )
+
+
+    fig.suptitle(
+        "Predict-Care AI - Time-Series Evaluation",
+        fontsize=16
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        PLOT_FILE,
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(
+        fig
+    )
+
+    print(
+        f"Evaluation graph saved to: "
+        f"{PLOT_FILE}"
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+
+    print(
+        "\n=============================================="
+    )
+
+    print(
+        "       PREDICT-CARE AI"
+    )
+
+    print(
+        "       TIME-SERIES ANALYSIS"
+    )
+
+    print(
+        "=============================================="
+    )
+
+    run_time_series_analysis()
+
+    print(
+        "\nTime-series analysis completed successfully."
+    )
+
+
+================================================================================
+FILE: GUI\GUI.py
+================================================================================
+import tkinter as tk
+from tkinter import ttk, messagebox
+from voice_assistant import start_voice_assistant
+import pythoncom
+
+# ==================================================
+# 1. MAIN WINDOW
+# ==================================================
+
+root = tk.Tk()
+root.title("AI triage estimation")
+root.geometry("1100x750")
+root.minsize(350, 450)
+root.configure(bg="#F1F5F9")
+root.resizable(True, True)
+
+# ==================================================
+# 2. COLORS AND SETTINGS
+# ==================================================
+
+BG = "#F1F5F9"
+WHITE = "#FFFFFF"
+PRIMARY = "#6366F1"
+PRIMARY_DARK = "#4F46E5"
+TEXT = "#1E293B"
+MUTED = "#64748B"
+BORDER = "#DCE4F0"
+SELECTED_BG = "#EEF2FF"
+
+# Minimum preferred width of each container.
+MIN_CARD_WIDTH = 280
+
+# Store input variables and container frames.
+inputs = {}
+container_cards = []
+
+
+# ==================================================
+# RIGHT-SIDE CONTAINER WITH 3 EQUAL SECTIONS
+# ==================================================
+
+right_container = tk.Frame(
+    root,
+    bg=BG,
+    highlightbackground=BORDER,
+    highlightthickness=1
+)
+
+right_container.place(
+    relx=1.0,
+    rely=0.5,
+    relwidth=0.25,
+    relheight=0.90,
+    x=-15,
+    anchor="e"
+)
+
+# Configure three equally sized containers.
+right_container.grid_columnconfigure(0, weight=1)
+
+for row in range(3):
+    right_container.grid_rowconfigure(row, weight=1, uniform="right_sections")
+
+# Create the three sections.
+right_sections = []
+
+for i in range(3):
+    section = tk.Frame(
+        right_container,
+        bg=WHITE,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        padx=10,
+        pady=10
+    )
+
+    section.grid(
+        row=i,
+        column=0,
+        sticky="nsew",
+        padx=6,
+        pady=6
+    )
+
+    right_sections.append(section)
+
+# Optional headings for each section.
+section_titles = [
+    "Patient Sumary",
+    "Calculated Triage Level",
+    "Estimated Waiting Time"
+]
+
+for section, title in zip(right_sections, section_titles):
+    tk.Label(
+        section,
+        text=title,
+        font=("Segoe UI", 12, "bold"),
+        bg=WHITE,
+        fg=TEXT,
+        anchor="w"
+    ).pack(
+        fill="x"
+    )
+
+
+# ==================================================
+# PATIENT SUMMARY DISPLAY
+# ==================================================
+
+summary_label = tk.Label(
+    right_sections[0],
+    text="Patient Summary\n\nComplete the form and click Continue.",
+    font=("Segoe UI", 10),
+    bg=WHITE,
+    fg=TEXT,
+    anchor="nw",
+    justify="left",
+    wraplength=220
+)
+
+summary_label.pack(
+    fill="both",
+    expand=True,
+    anchor="nw",
+    padx=5,
+    pady=10
+)
+def resize_summary(event):
+    summary_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[0].bind(
+    "<Configure>",
+    resize_summary
+)
+
+
+# ==================================================
+# CALCULATE BUTTON - SECOND RIGHT-SIDE CONTAINER
+# ==================================================
+calculate_label = tk.Label(
+right_sections[1],
+text="Calculate only after all patient information has been entered"
+)
+
+calculate_label.pack(
+    fill="both",
+    expand= True,
+    anchor="nw",
+    padx=5,
+    pady=10
+ )
+def resize_calculate(event):
+    calculate_label.configure(
+        wraplength=max(100, event.width - 30)
+    )
+
+right_sections[1].bind(
+    "<Configure>",
+    resize_calculate
+)
+
+
+
+calculate_button = tk.Button(
+    right_sections[1],
+    text="Calculate 🧮",
+    font=("Segoe UI", 11, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    borderwidth=0,
+    cursor="hand2",
+    padx=20,
+    pady=10,
+    command=lambda: print("Calculate button clicked")
+)
+
+calculate_button.pack(
+    fill="x",
+    padx=12,
+    pady=12
+)
+
+
+
+
+
+
+# ==================================================
+# VOICE ASSESSMENT BUTTON
+# ==================================================
+
+voice_status = tk.Label(
+    right_sections[0],
+    text="Ready for voice assessment",
+    font=("Segoe UI", 9),
+    bg=WHITE,
+    fg=MUTED,
+    wraplength=200
+)
+
+voice_status.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
+
+
+voice_session = None
+
+
+def update_voice_status(message):
+    voice_status.configure(text=message)
+
+
+def begin_voice_assessment():
+    global voice_session
+
+    voice_button.configure(state="disabled")
+
+    voice_session = start_voice_assistant(
+        root,
+        inputs,
+        on_status=update_voice_status
+    )
+
+    # Allow another interview after the current one finishes.
+    # Re-enable manually after completion if desired.
+
+voice_button = tk.Button(
+    right_sections[0],
+    text="Start Voice Assessment 🎤 ",
+    command=begin_voice_assessment,
+    font=("Segoe UI", 10, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    cursor="hand2",
+    padx=10,
+    pady=10
+)
+
+voice_button.pack(
+    fill="x",
+    padx=12,
+    pady=8
+)
+
+# ==================================================
+# 3. SCROLLABLE CONTENT AREA
+# ==================================================
+
+content_area = tk.Frame(root, bg=BG)
+
+content_area.place(
+    relx=0.0,
+    rely=0.0,
+    relwidth=0.73,
+    relheight=0.90,
+    x=12,
+    y=12
+)
+
+# Canvas makes it possible to scroll through the cards.
+canvas = tk.Canvas(
+    content_area,
+    bg=BG,
+    highlightthickness=0,
+    borderwidth=0
+)
+
+# Vertical scrollbar connected to the canvas.
+scrollbar = ttk.Scrollbar(
+    content_area,
+    orient="vertical",
+    command=canvas.yview
+)
+
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+# All containers will be placed inside this frame.
+scroll_frame = tk.Frame(canvas, bg=BG)
+
+canvas_window = canvas.create_window(
+    (0, 0),
+    window=scroll_frame,
+    anchor="nw"
+)
+
+# ==================================================
+# 4. SCROLLING FUNCTIONS
+# ==================================================
+
+def update_scroll_region(event=None):
+    """Update the area that can be scrolled."""
+
+    canvas.configure(
+        scrollregion=canvas.bbox("all")
+    )
+
+
+def resize_content(event):
+    """Resize the content and rearrange the containers."""
+
+    canvas.itemconfigure(
+        canvas_window,
+        width=event.width
+    )
+
+    arrange_containers(event.width)
+
+
+# Update scrolling when the content changes.
+scroll_frame.bind(
+    "<Configure>",
+    update_scroll_region
+)
+
+# Rearrange the cards when the window is resized.
+canvas.bind(
+    "<Configure>",
+    resize_content
+)
+
+
+def on_mousewheel(event):
+    """Scroll the form with the mouse wheel."""
+
+    if event.num == 4:
+        # Linux: scroll upward.
+        canvas.yview_scroll(-1, "units")
+
+    elif event.num == 5:
+        # Linux: scroll downward.
+        canvas.yview_scroll(1, "units")
+
+    elif event.delta:
+        # Windows and macOS mouse-wheel support.
+        canvas.yview_scroll(
+            int(-event.delta / 120),
+            "units"
+        )
+
+
+def bind_mousewheel(widget):
+    """Enable mouse-wheel scrolling over child widgets."""
+
+    widget.bind("<MouseWheel>", on_mousewheel)
+    widget.bind("<Button-4>", on_mousewheel)
+    widget.bind("<Button-5>", on_mousewheel)
+
+    for child in widget.winfo_children():
+        bind_mousewheel(child)
+
+
+# ==================================================
+# 5. CUSTOM RADIO INDICATOR
+# ==================================================
+
+def draw_radio(radio_canvas, selected):
+    """Draw a custom radio circle using a Canvas."""
+
+    radio_canvas.delete("all")
+
+    # Draw the outer circle.
+    radio_canvas.create_oval(
+        3, 3, 19, 19,
+        outline=PRIMARY if selected else "#94A3B8",
+        width=2,
+        fill=WHITE
+    )
+
+    # Draw the inner circle when selected.
+    if selected:
+        radio_canvas.create_oval(
+            8, 8, 14, 14,
+            outline=PRIMARY,
+            fill=PRIMARY
+        )
+
+
+# ==================================================
+# 6. REUSABLE CONTAINER CREATOR
+# ==================================================
+
+def create_container(container_id, title, subtitle):
+    """Create a modern card with a heading and input area."""
+
+    # Main white container.
+    card = tk.Frame(
+        scroll_frame,
+        bg=WHITE,
+        highlightbackground=BORDER,
+        highlightthickness=1,
+        padx=16,
+        pady=16
+    )
+
+    # Save the card for responsive layout.
+    container_cards.append(card)
+
+    card.grid_columnconfigure(0, weight=1)
+
+    # Container title.
+    tk.Label(
+        card,
+        text=title,
+        font=("Segoe UI", 15, "bold"),
+        bg=WHITE,
+        fg=TEXT,
+        anchor="w"
+    ).grid(
+        row=0,
+        column=0,
+        sticky="ew",
+        pady=(0, 6)
+    )
+
+    # Container description.
+    tk.Label(
+        card,
+        text=subtitle,
+        font=("Segoe UI", 9),
+        bg=WHITE,
+        fg=MUTED,
+        anchor="w",
+        justify="left",
+        wraplength=300
+    ).grid(
+        row=1,
+        column=0,
+        sticky="ew",
+        pady=(0, 14)
+    )
+
+    # Area where input widgets will be placed.
+    body = tk.Frame(card, bg=WHITE)
+
+    body.grid(
+        row=2,
+        column=0,
+        sticky="nsew"
+    )
+
+    card.grid_rowconfigure(2, weight=1)
+
+    return card, body
+
+
+# ==================================================
+# 7. CUSTOM RADIO BUTTON GROUP
+# ==================================================
+
+def create_radio_group(parent, options, variable):
+    """Create a group of clickable custom radio cards."""
+
+    widgets = []
+
+    def refresh():
+        """Update the appearance of every radio option."""
+
+        for title, frame, indicator, description in widgets:
+
+            selected = variable.get() == title
+
+            background = (
+                SELECTED_BG if selected else WHITE
+            )
+
+            # Highlight the selected card.
+            frame.configure(
+                bg=background,
+                highlightbackground=(
+                    PRIMARY if selected else BORDER
+                )
+            )
+
+            indicator.configure(bg=background)
+            description.configure(bg=background)
+
+            # Redraw the radio indicator.
+            draw_radio(indicator, selected)
+
+    def select_option(title):
+        """Save the selected option and refresh the group."""
+
+        variable.set(title)
+        refresh()
+            # Refresh the radio cards whenever the variable changes,
+    # including when the voice assistant updates it.
+    variable.trace_add(
+        "write",
+        lambda *_: refresh()
+    )
+
+    for title, description in options:
+
+        # Frame for one radio option.
+        option_card = tk.Frame(
+            parent,
+            bg=WHITE,
+            highlightbackground=BORDER,
+            highlightthickness=1,
+            padx=8,
+            pady=7,
+            cursor="hand2"
+        )
+
+        option_card.pack(
+            fill="x",
+            pady=3
+        )
+
+        option_card.grid_columnconfigure(1, weight=1)
+
+        # Custom radio circle.
+        indicator = tk.Canvas(
+            option_card,
+            width=22,
+            height=22,
+            bg=WHITE,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+
+        indicator.grid(
+            row=0,
+            column=0,
+            rowspan=2,
+            padx=(0, 7)
+        )
+
+        # Option title.
+        title_label = tk.Label(
+            option_card,
+            text=title,
+            font=("Segoe UI", 10, "bold"),
+            bg=WHITE,
+            fg=TEXT,
+            anchor="w",
+            cursor="hand2"
+        )
+
+        title_label.grid(
+            row=0,
+            column=1,
+            sticky="ew"
+        )
+
+        # Option description.
+        description_label = tk.Label(
+            option_card,
+            text=description,
+            font=("Segoe UI", 8),
+            bg=WHITE,
+            fg=MUTED,
+            anchor="w",
+            cursor="hand2"
+        )
+
+        description_label.grid(
+            row=1,
+            column=1,
+            sticky="ew"
+        )
+
+        widgets.append(
+            (
+                title,
+                option_card,
+                indicator,
+                description_label
+            )
+        )
+
+        # Clicking anywhere on the card selects the option.
+        for widget in (
+            option_card,
+            indicator,
+            title_label,
+            description_label
+        ):
+            widget.bind(
+                "<Button-1>",
+                lambda event, t=title: select_option(t)
+            )
+
+    # Display the initial selection.
+    refresh()
+    # ==================================================
+# 8. CONTAINER 1: SEX
+# ==================================================
+
+sex_card, sex_body = create_container(
+    "Sex",
+    "Sex",
+    "Choose the Sex of the patient."
+)
+
+# Store the selected category.
+sex_value = tk.StringVar(value="Personal")
+inputs["sex"] = sex_value
+
+# Create four custom radio options.
+create_radio_group(
+    sex_body,
+    [
+        ("Male", ""),
+        ("Female", ""),
+
+    ],
+    sex_value
+)
+
+
+# ==================================================
+# 9. CONTAINER 2: Age
+# ==================================================
+
+age_card, age_body = create_container(
+    "Age",
+    "Age of the Patient",
+    "Enter the age of the patient."
+)
+
+tk.Label(
+    age_body,
+    text="Age of Patient",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the selected quantity.
+age_value = tk.IntVar(value=1)
+
+# Spinbox lets the user choose a number from 1 to 100.
+age_selector = tk.Spinbox(
+    age_body,
+    from_=1,
+    to=100,
+    textvariable=age_value,
+    font=("Segoe UI", 11),
+    relief="solid",
+    bd=1,
+    width=10
+)
+
+age_selector.pack(
+    anchor="w",
+    ipady=5
+)
+
+inputs["age"] = age_value
+
+
+# ==================================================
+# 10. CONTAINER 3: Injury Status
+# ==================================================
+
+Injury_card, Injury_body = create_container(
+    "Injury",
+    "Injury status",
+    "Enter the Patient's Injury Status."
+)
+
+# Store the selected billing cycle.
+Injury_value = tk.StringVar(value="")
+inputs["injury"] = Injury_value
+
+create_radio_group(
+    Injury_body,
+    [
+        ("True", "There is a visible injury"),
+        ("False", "There is no visible injury"),
+
+    ],
+    Injury_value
+)
+
+
+# ==================================================
+# 11. CONTAINER 4: Chief Complain
+# ==================================================
+
+Complain_card, Complain_body = create_container(
+    "Complain",
+    "Chief Complain",
+    "Enter Paitiens Chief complain."
+)
+
+# ------------------------------
+# Complain field
+# ------------------------------
+
+tk.Label(
+    Complain_body,
+    text="Your message",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 7)
+)
+
+# A multiline text box for longer messages.
+Complain_text = tk.Text(
+    Complain_body,
+    height=5,
+    font=("Segoe UI", 10),
+    wrap="word",
+    relief="solid",
+    bd=1,
+    highlightthickness=1,
+    highlightbackground=BORDER,
+    highlightcolor=PRIMARY,
+    padx=8,
+    pady=8
+)
+
+Complain_text.pack(
+    fill="both",
+    expand=True
+)
+
+inputs["complain"] = Complain_text
+
+
+# ==================================================
+# 12. CONTAINER 5: Pain
+# ==================================================
+
+Pain_card, Pain_body = create_container(
+    "Pain",
+    "Patient's Pain",
+    "Confirm if Patient is in pain."
+)
+
+# Store the selected Option.
+Pain_value = tk.StringVar(value="")
+inputs["pain"] = Pain_value
+
+create_radio_group(
+    Pain_body,
+    [
+        ("True", "The patient is in pain"),
+        ("False", "The patient is not in pain"),
+
+    ],
+    Pain_value
+)
+
+
+# ==================================================
+# 13. CONTAINER 6: Nurse Assessment
+# ==================================================
+
+NA_card, NA_body = create_container(
+    "Nurse Assessment",
+    "Nurse Assesment",
+    "Enter the Nurse's Assesment ."
+)
+
+tk.Label(
+    NA_body,
+    text="Assessment",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the dropdown selection.
+NA_value = tk.StringVar(value="")
+
+# Create a dropdown menu.
+NA_dropdown = ttk.Combobox(
+    NA_body,
+    textvariable=NA_value,
+    values=[
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "Level 4"
+    ],
+    state="readonly",
+    font=("Segoe UI", 10)
+)
+
+NA_dropdown.pack(
+    fill="x",
+    ipady=5
+)
+
+inputs["na"] = NA_value
+
+
+# ==================================================
+# 14. CONTAINER 7: Body Temprature
+# ==================================================
+
+BT_card, BT_body = create_container(
+    "Temprature",
+    "Body Temprature",
+    "Enter the patient's body Temprature."
+)
+
+tk.Label(
+    BT_body,
+    text="Temprature",
+    font=("Segoe UI", 9, "bold"),
+    bg=WHITE,
+    fg=TEXT
+).pack(
+    anchor="w",
+    pady=(0, 8)
+)
+
+# Store the selected quantity.
+BT_value = tk.IntVar(value=1)
+
+# Spinbox lets the user choose a number from 1 to 100.
+BT_selector = tk.Spinbox(
+    BT_body,
+    from_=1,
+    to=100,
+    textvariable=BT_value,
+    font=("Segoe UI", 11),
+    relief="solid",
+    bd=1,
+    width=10
+)
+
+BT_selector.pack(
+    anchor="w",
+    ipady=5
+)
+
+inputs["bt"] = BT_value
+
+
+# ==================================================
+# 15. CONTAINER 8: Mental State
+# ==================================================
+
+MS_card, MS_body = create_container(
+    "Mental State",
+    "Patient's Mental state",
+    "Select the patients Mental State."
+)
+
+# Store the selected Option.
+MS_value = tk.StringVar(value="")
+inputs["ms"] = MS_value
+
+create_radio_group(
+    MS_body,
+    [
+        ("Level 1", " The patient is Alert"),
+        ("Level 2", "The patient has a Verbal Response"),
+        ("Level 3", "The patient has aPain response"),
+        ("Level 4", "The patient has no response"),
+
+    ],
+    MS_value
+)
+
+
+# ==================================================
+# 16. RESPONSIVE CONTAINER LAYOUT
+# ==================================================
+
+def arrange_containers(available_width):
+    """
+    Arrange containers according to the available width.
+
+    Narrow window: one column.
+    Medium window: two columns.
+    Wide window: three columns.
+    """
+
+    if not container_cards:
+        return
+
+    # Determine how many cards can fit horizontally.
+    columns = max(
+        1,
+        min(
+            3,
+            int(
+                (available_width + 12)
+                / (MIN_CARD_WIDTH + 12)
+            )
+        )
+    )
+
+    # Configure the grid columns.
+    for column in range(3):
+        scroll_frame.grid_columnconfigure(
+            column,
+            weight=1 if column < columns else 0,
+            uniform="cards" if column < columns else ""
+        )
+
+    # Place each container in the appropriate row and column.
+    for index, card in enumerate(container_cards):
+
+        row = index // columns
+        column = index % columns
+
+        card.grid(
+            row=row,
+            column=column,
+            sticky="nsew",
+            padx=6,
+            pady=6
+        )
+
+    # Refresh the scrollable area after rearranging.
+    root.after_idle(update_scroll_region)
+    # ==================================================
+# 17. CONTINUE BUTTON ACTION
+# ==================================================
+
+def continue_action():
+    """Collect, validate, and display the form information."""
+
+    # ----------------------------------------------
+    # Read the radio button selections.
+    # ----------------------------------------------
+
+    sex = inputs["sex"].get()
+    injury = inputs["injury"].get()
+    pain = inputs["pain"].get()
+    ms = inputs["ms"].get()
+
+    # ----------------------------------------------
+    # Read the Chief Complain.
+    # ----------------------------------------------
+
+    complain = inputs["complain"].get("1.0", "end-1c").strip()
+   
+
+ 
+    # ----------------------------------------------
+    # Read the dropdown selection.
+    # ----------------------------------------------
+
+    na = inputs["na"].get()
+
+    # ----------------------------------------------
+    # Validate the numbers.
+    # ----------------------------------------------
+
+    try:
+        age = int(inputs["age"].get())
+
+        if not 1 <= age <= 100:
+            raise ValueError
+
+    except (ValueError, tk.TclError):
+        messagebox.showwarning(
+            "Invalid Quantity",
+            "Please enter a quantity between 1 and 100."
+        )
+        return
+    try:
+             bt = int(inputs["bt"].get())
+     
+             if not 1 <= bt <= 100:
+                 raise ValueError
+     
+    except (ValueError, tk.TclError):
+             messagebox.showwarning(
+                 "Invalid Quantity",
+                 "Please enter a quantity between 1 and 100."
+             )
+             return
+    
+  
+    # ----------------------------------------------
+    # Check required radio button selections.
+    # ----------------------------------------------
+
+    missing = []
+
+    if not sex:
+        missing.append("sex")
+
+    if not injury:
+        missing.append("injury")
+
+    if not pain:
+        missing.append("pain")
+        
+    if not ms:
+        missing.append("ms")
+
+    if missing:
+        messagebox.showwarning(
+            "Incomplete Form",
+            "Please complete the following selections:\n\n"
+            + "\n".join(missing)
+        )
+        return
+
+ 
+
+    # ----------------------------------------------
+    # Build the submission summary.
+    # ----------------------------------------------
+
+    summary = (
+        f"Patient Sex: {sex}\n"
+        f"Patient Age: {age}\n"
+        f"Injury Status: {injury}\n"
+        f"Chief Complain: {complain}\n"
+        f"Pain: {pain }\n"
+        f"Nurse Assesment: {na}\n"
+        f"Body Temprature: {bt}\n"
+        f"Mental State: {ms}"
+    )
+
+    # ----------------------------------------------
+    # Display the submitted information.
+    # ----------------------------------------------
+       # Display the summary in the first right-side sub-container.
+    summary_label.configure(
+    text="Patient Summary\n\n" + summary
+    )
+
+
+
+
+# ==================================================
+# 18. FIXED BOTTOM BUTTON
+# ==================================================
+
+# This frame is outside the scrollable canvas.
+# Therefore, the button stays visible while scrolling.
+
+bottom_area = tk.Frame(
+    root,
+    bg=BG
+)
+
+bottom_area.pack(
+    side="bottom",
+    fill="x",
+    padx=12,
+    pady=(5, 16)
+)
+
+# Create the Continue button.
+continue_button = tk.Button(
+    bottom_area,
+    text="Continue  →",
+    command=continue_action,
+    font=("Segoe UI", 11, "bold"),
+    bg=PRIMARY,
+    fg=WHITE,
+    activebackground=PRIMARY_DARK,
+    activeforeground=WHITE,
+    relief="flat",
+    borderwidth=0,
+    cursor="hand2",
+    padx=35,
+    pady=10
+)
+
+# Keep the button centered horizontally.
+continue_button.pack(
+    anchor="center"
+)
+
+
+# ==================================================
+# 19. INITIALIZE THE APPLICATION
+# ==================================================
+
+# Calculate the initial window dimensions.
+root.update_idletasks()
+
+# Arrange the containers based on the available width.
+arrange_containers(
+    canvas.winfo_width()
+)
+
+# Enable mouse-wheel scrolling over the content.
+bind_mousewheel(scroll_frame)
+
+# Start the Tkinter event loop.
+root.mainloop()
+
+
+================================================================================
+FILE: NLP\ktas_input_menu.py
+================================================================================
+
+import speech_recognition as sr
+from predict_ktas import predict_ktas
+
+
+# ----- SPEECH INPUT FUNCTION -----
+def get_speech_input():
+    recognizer = sr.Recognizer()
+
+    # Working microphone on your laptop
+    microphone = sr.Microphone(device_index=1)
+
+    try:
+        with microphone as source:
+            print("\nMicrophone ready.")
+            input("Press Enter when you are ready to speak...")
+
+            print("Recording for 10 seconds. Speak now!")
+            audio = recognizer.record(source, duration=10)
+
+        print("\nConverting speech to text...")
+
+        complaint = recognizer.recognize_google(
+            audio,
+            language="en-ZA"
+        )
+
+        print(f"\nRecognized Complaint: {complaint}")
+
+        return complaint
+
+    except sr.UnknownValueError:
+        print("Speech could not be understood.")
+        return None
+
+    except sr.RequestError as error:
+        print("Speech recognition service error:", error)
+        return None
+
+    except (OSError, AttributeError) as error:
+        print("Microphone error:", error)
+        return None
+
+
+# ----- MAIN PROGRAM -----
+def main():
+    print("\n================================")
+    print("         PREDICT-CARE AI")
+    print("   NLP Patient Triage Support")
+    print("================================")
+
+    while True:
+        print("\nChoose input method:")
+        print("1. Enter complaint using text")
+        print("2. Enter complaint using speech")
+        print("3. Exit")
+
+        choice = input("\nEnter your choice (1-3): ").strip()
+
+        if choice == "1":
+            complaint = input(
+                "\nEnter patient chief complaint: "
+            ).strip()
+
+        elif choice == "2":
+            complaint = get_speech_input()
+
+        elif choice == "3":
+            print("\nExiting Predict-Care AI.")
+            break
+
+        else:
+            print("\nInvalid choice. Please select 1, 2 or 3.")
+            continue
+
+        if not complaint:
+            print("\nNo complaint received. Please try again.")
+            continue
+
+        # ----- MAKE KTAS PREDICTION -----
+        predicted_ktas, emergency_category = predict_ktas(
+            complaint
+        )
+
+        # ----- DISPLAY RESULT -----
+        print("\nPREDICTION RESULT")
+        print("-----------------")
+        print(f"Chief Complaint: {complaint}")
+        print(f"Predicted KTAS Level: {predicted_ktas}")
+        print(f"Emergency Category: {emergency_category}")
+
+        print(
+            "\nNote: This prediction is for decision-support only "
+            "and does not replace professional clinical assessment."
+        )
+
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: time_series.py
+================================================================================
+"""
+Predict-Care AI
+Time-Series Analysis
+
+Purpose:
+    Analyse patient demand over time and evaluate simple
+    time-series forecasting models.
+
+The model is evaluated by hiding the final part of each
+scenario and asking the model to predict those observations.
+
+This avoids treating the end of the simulation as normal
+future patient demand.
+
+NOTE: The comments will be deleted in the final version of the code. They are here for
+debugging purposes.
+"""
+
+# Here I am importing the tools I need for my time-series analysis.
+import os
+import joblib
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Here I am importing the time-series models I will compare.
+from statsmodels.tsa.holtwinters import (
+    SimpleExpSmoothing,
+    Holt
+)
+
+# Here I am importing the error measurements I use to evaluate
+# how close my predictions are to the actual patient counts.
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+DATA_DIR = "Data"
+MODEL_DIR = "Models"
+RESULTS_DIR = "Results"
+
+DATASET_FILE = os.path.join(
+    DATA_DIR,
+    "patient_flow_timeseries.csv"
+)
+
+MODEL_FILE = os.path.join(
+    MODEL_DIR,
+    "time_series_model.pkl"
+)
+
+EVALUATION_FILE = os.path.join(
+    RESULTS_DIR,
+    "time_series_evaluation.csv"
+)
+
+PLOT_FILE = os.path.join(
+    RESULTS_DIR,
+    "time_series_evaluation.png"
+)
+
+# Here I choose patient count as my main time-series variable.
+VALUE_COLUMN = "patient_count"
+
+# Here I use 60% of each scenario for training and 30% for testing.
+TRAIN_RATIO = 0.60
+TEST_RATIO = 0.30
+
+
+# ============================================================
+# DIRECTORY SETUP
+# ============================================================
+
+def create_directories():
+
+    # Here I make sure my required folders exist.
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+
+# ============================================================
+# DATA LOADING
+# ============================================================
+
+def load_time_series_data():
+
+    # Here I check that my time-series dataset exists.
+    if not os.path.exists(DATASET_FILE):
+        raise FileNotFoundError(
+            f"Dataset not found: {DATASET_FILE}"
+        )
+
+    # Here I load the CSV file into a pandas DataFrame.
+    data = pd.read_csv(DATASET_FILE)
+
+    # Here I convert DateTime into a proper date/time value.
+    data["DateTime"] = pd.to_datetime(
+        data["DateTime"]
+    )
+
+    # Here I arrange the observations chronologically.
+    data = data.sort_values(
+        ["Scenario", "DateTime"]
+    ).reset_index(drop=True)
+
+    print("\n========== TIME-SERIES DATA ==========")
+
+    print(f"Records: {len(data)}")
+    print(f"Scenarios: {data['Scenario'].nunique()}")
+
+    print(
+        f"Date range: "
+        f"{data['DateTime'].min()} "
+        f"to "
+        f"{data['DateTime'].max()}"
+    )
+
+    print("\nRecords per scenario:")
+
+    print(
+        data["Scenario"]
+        .value_counts()
+        .sort_index()
+    )
+
+    return data
+
+
+# ============================================================
+# BASIC ANALYSIS
+# ============================================================
+
+def analyse_data(data):
+
+    # Here I calculate the average patient count for each scenario.
+    average_patients = (
+        data.groupby("Scenario")[VALUE_COLUMN]
+        .mean()
+        .sort_values(ascending=False)
+    )
+
+    print("\nAverage patient count:")
+
+    print(
+        average_patients
+        .round(2)
+    )
+
+    # Here I also look at average waiting time because it gives
+    # useful operational context for the patient-demand series.
+    if "avg_total_wait" in data.columns:
+
+        average_wait = (
+            data.groupby("Scenario")["avg_total_wait"]
+            .mean()
+            .sort_values(ascending=False)
+        )
+
+        print("\nAverage waiting time:")
+
+        print(
+            average_wait
+            .round(2)
+        )
+
+
+# ============================================================
+# MODEL EVALUATION
+# ============================================================
+
+def evaluate_models(train, test):
+
+    # Here I train a Simple Exponential Smoothing model.
+    ses_model = SimpleExpSmoothing(
+        train,
+        initialization_method="estimated"
+    ).fit()
+
+    # Here I predict the same number of observations that
+    # exist in my hidden test set.
+    ses_prediction = ses_model.forecast(
+        len(test)
+    )
+
+    # Here I make sure patient counts cannot become negative.
+    ses_prediction = np.maximum(
+        ses_prediction,
+        0
+    )
+
+    # Here I calculate the SES errors.
+    ses_mae = mean_absolute_error(
+        test,
+        ses_prediction
+    )
+
+    ses_rmse = np.sqrt(
+        mean_squared_error(
+            test,
+            ses_prediction
+        )
+    )
+
+
+    # Here I train a Holt trend model.
+    holt_model = Holt(
+        train,
+        initialization_method="estimated"
+    ).fit()
+
+    # Here I predict the hidden test period using Holt.
+    holt_prediction = holt_model.forecast(
+        len(test)
+    )
+
+    # Here I make sure Holt cannot produce negative patient counts.
+    holt_prediction = np.maximum(
+        holt_prediction,
+        0
+    )
+
+    # Here I calculate the Holt errors.
+    holt_mae = mean_absolute_error(
+        test,
+        holt_prediction
+    )
+
+    holt_rmse = np.sqrt(
+        mean_squared_error(
+            test,
+            holt_prediction
+        )
+    )
+
+
+    # Here I compare the two models using MAE.
+    if ses_mae <= holt_mae:
+
+        selected_model = "Simple Exponential Smoothing"
+        selected_prediction = ses_prediction
+        selected_mae = ses_mae
+        selected_rmse = ses_rmse
+
+    else:
+
+        selected_model = "Holt Trend"
+        selected_prediction = holt_prediction
+        selected_mae = holt_mae
+        selected_rmse = holt_rmse
+
+
+    return {
+        "ses_mae": ses_mae,
+        "ses_rmse": ses_rmse,
+        "holt_mae": holt_mae,
+        "holt_rmse": holt_rmse,
+        "selected_model": selected_model,
+        "selected_prediction": selected_prediction,
+        "selected_mae": selected_mae,
+        "selected_rmse": selected_rmse
+    }
+
+
+# ============================================================
+# TIME-SERIES ANALYSIS
+# ============================================================
+
+def run_time_series_analysis():
+
+    # Here I make sure my folders are ready.
+    create_directories()
+
+    # Here I load my patient-flow time-series dataset.
+    data = load_time_series_data()
+
+    # Here I display basic information about the data.
+    analyse_data(data)
+
+    all_results = []
+    saved_models = {}
+
+    plot_data = []
+
+
+    # Here I analyse each scenario independently.
+    for scenario in data["Scenario"].unique():
+
+        print("\n" + "=" * 60)
+        print(f"SCENARIO: {scenario}")
+        print("=" * 60)
+
+        scenario_data = (
+            data[data["Scenario"] == scenario]
+            .sort_values("DateTime")
+            .copy()
+        )
+
+        # Here I extract the patient-count time series.
+        series = (
+            scenario_data
+            .set_index("DateTime")[VALUE_COLUMN]
+            .astype(float)
+        )
+
+        # Here I calculate the training size.
+        # Here I calculate how many observations I will use for training.
+        train_size = int(
+            len(series) * TRAIN_RATIO
+        )
+        
+        # Here I calculate how many observations I will use for testing.
+        test_size = int(
+            len(series) * TEST_RATIO
+        )
+        
+        # I make sure there are enough observations for both sections.
+        if train_size < 2 or test_size < 1:
+        
+            print(
+                "Not enough observations for train/test evaluation."
+            )
+            continue
+        
+        # Here I split the time series chronologically.
+        # I do NOT randomly shuffle time-series observations.
+        train = series.iloc[:train_size]
+        
+        # Here I use the next 30% as my unseen test data.
+        test = series.iloc[
+            train_size:train_size + test_size
+        ]
+        
+        # The remaining observations represent the end of the
+        # simulation, so I exclude them from model evaluation.
+        excluded = series.iloc[
+            train_size + test_size:
+        ]
+        
+        print(f"Total observations: {len(series)}")
+        print(f"Training observations: {len(train)}")
+        print(f"Testing observations: {len(test)}")
+        print(f"Excluded shutdown observations: {len(excluded)}")
+
+        # Here I compare my two forecasting approaches.
+        results = evaluate_models(
+            train,
+            test
+        )
+
+        print("\nModel comparison:")
+
+        print(
+            f"Simple Exponential Smoothing "
+            f"MAE: {results['ses_mae']:.2f}, "
+            f"RMSE: {results['ses_rmse']:.2f}"
+        )
+
+        print(
+            f"Holt Trend "
+            f"MAE: {results['holt_mae']:.2f}, "
+            f"RMSE: {results['holt_rmse']:.2f}"
+        )
+
+        print(
+            f"\nSelected model: "
+            f"{results['selected_model']}"
+        )
+
+        print(
+            f"Selected MAE: "
+            f"{results['selected_mae']:.2f}"
+        )
+
+        print(
+            f"Selected RMSE: "
+            f"{results['selected_rmse']:.2f}"
+        )
+
+
+        # ====================================================
+        # SAVE TEST PREDICTIONS
+        # ====================================================
+
+        selected_prediction = pd.Series(
+            results["selected_prediction"],
+            index=test.index
+        )
+
+        # Here I save the actual and predicted values so I can
+        # inspect exactly how my model performed.
+        for index in test.index:
+
+            all_results.append({
+                "Scenario": scenario,
+                "DateTime": index,
+                "Actual_Patient_Count": test.loc[index],
+                "Predicted_Patient_Count": selected_prediction.loc[index],
+                "Model": results["selected_model"],
+                "MAE": results["selected_mae"],
+                "RMSE": results["selected_rmse"]
+            })
+
+
+        # ====================================================
+        # REFIT SELECTED MODEL ON ALL AVAILABLE DATA
+        # ====================================================
+
+        # After evaluation, I train the selected approach using
+        # the complete scenario. This saved model can later be
+        # used by the Predict-Care system.
+        if results["selected_model"] == "Simple Exponential Smoothing":
+
+            final_model = SimpleExpSmoothing(
+                series,
+                initialization_method="estimated"
+            ).fit()
+
+        else:
+
+            final_model = Holt(
+                series,
+                initialization_method="estimated"
+            ).fit()
+
+
+        saved_models[scenario] = {
+            "model": results["selected_model"],
+            "fitted_model": final_model,
+            "value_column": VALUE_COLUMN
+        }
+
+
+        # Here I store information needed for the evaluation graph.
+        plot_data.append({
+            "scenario": scenario,
+            "series": series,
+            "train": train,
+            "test": test,
+            "prediction": selected_prediction,
+            "model": results["selected_model"]
+        })
+
+
+    # ========================================================
+    # SAVE EVALUATION RESULTS
+    # ========================================================
+
+    evaluation_data = pd.DataFrame(
+        all_results
+    )
+
+    evaluation_data.to_csv(
+        EVALUATION_FILE,
+        index=False
+    )
+
+    print(
+        f"\nEvaluation results saved to: "
+        f"{EVALUATION_FILE}"
+    )
+
+
+    # ========================================================
+    # SAVE MODELS
+    # ========================================================
+
+    joblib.dump(
+        saved_models,
+        MODEL_FILE
+    )
+
+    print(
+        f"Models saved to: "
+        f"{MODEL_FILE}"
+    )
+
+
+    # ========================================================
+    # CREATE EVALUATION GRAPH
+    # ========================================================
+
+    create_evaluation_plot(
+        plot_data
+    )
+
+    return evaluation_data
+
+
+# ============================================================
+# VISUALISATION
+# ============================================================
+
+def create_evaluation_plot(plot_data):
+
+    # Here I create one graph for each scenario so that the
+    # actual and predicted test values are easy to see.
+    number_of_plots = len(plot_data)
+
+    rows = 3
+    columns = 2
+
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(16, 12),
+        sharey=False
+    )
+
+    axes = axes.flatten()
+
+    for position, item in enumerate(plot_data):
+
+        ax = axes[position]
+
+        scenario = item["scenario"]
+        train = item["train"]
+        test = item["test"]
+        prediction = item["prediction"]
+        model = item["model"]
+
+        # Here I plot the training observations.
+        ax.plot(
+            train.index,
+            train.values,
+            marker="o",
+            label="Training Data"
+        )
+
+        # Here I plot the actual unseen test observations.
+        ax.plot(
+            test.index,
+            test.values,
+            marker="o",
+            label="Actual Test Data"
+        )
+
+        # Here I plot what my selected model predicted
+        # for those unseen observations.
+        ax.plot(
+            prediction.index,
+            prediction.values,
+            marker="x",
+            linestyle="--",
+            label="Forecast"
+        )
+
+        ax.axvline(
+            test.index[0],
+            linestyle=":",
+            label="Test Start"
+        )
+
+        ax.set_title(
+            scenario
+        )
+
+        ax.set_xlabel(
+            "Date and Time"
+        )
+
+        ax.set_ylabel(
+            "Patient Count"
+        )
+
+        ax.tick_params(
+            axis="x",
+            rotation=45
+        )
+
+        ax.grid(
+            True,
+            alpha=0.3
+        )
+
+        ax.legend(
+            fontsize=8
+        )
+
+
+    # If there are unused subplot positions, I remove them.
+    for position in range(
+        len(plot_data),
+        len(axes)
+    ):
+
+        fig.delaxes(
+            axes[position]
+        )
+
+
+    fig.suptitle(
+        "Predict-Care AI - Time-Series Evaluation",
+        fontsize=16
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        PLOT_FILE,
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(
+        fig
+    )
+
+    print(
+        f"Evaluation graph saved to: "
+        f"{PLOT_FILE}"
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+
+    print(
+        "\n=============================================="
+    )
+
+    print(
+        "       PREDICT-CARE AI"
+    )
+
+    print(
+        "       TIME-SERIES ANALYSIS"
+    )
+
+    print(
+        "=============================================="
+    )
+
+    run_time_series_analysis()
+
+    print(
+        "\nTime-series analysis completed successfully."
+    )
