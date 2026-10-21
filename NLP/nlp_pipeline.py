@@ -221,7 +221,7 @@ def run_nlp_pipeline():
 
     # Here I am using an example complaint only to test the pipeline end to end.
     example_result = _predict_with_loaded_artifacts(
-        "chest pain",
+        "Open Wound",
         model,
         tfidf,
     )

@@ -675,20 +675,19 @@ def predict_medication_wait(input_data, model_package=None):
     """Here I predict medication waiting time for one or more input records."""
     if model_package is None:
         model_package = load_medication_wait_model()
-    if isinstance(input_data, dict):
-        input_data = pd.DataFrame([input_data])
-    elif not isinstance(input_data, pd.DataFrame):
-        raise TypeError("input_data must be a dictionary or pandas DataFrame.")
 
-    missing_features = [column for column in model_package["feature_columns"] if column not in input_data.columns]
-    if missing_features:
-        raise ValueError(f"Missing medication prediction features: {missing_features}")
+    X = _prepare_prediction_input(
+        input_data,
+        model_package["feature_columns"],
+        "medication waiting-time prediction",
+    )
 
-    X = input_data[model_package["feature_columns"]].copy()
     X_classifier = model_package["classifier_preprocessor"].transform(X)
     wait_flags = model_package["classifier"].predict(X_classifier).astype(int)
     X_duration = model_package["duration_preprocessor"].transform(X)
     durations = model_package["duration_model"].predict(X_duration)
+
+    # Here I keep predicted waits non-negative and return zero when no wait is predicted.
     return np.where(wait_flags == 1, np.maximum(durations, 0.0), 0.0)
 
 
@@ -823,22 +822,192 @@ def load_total_time_excluding_med_wait_model():
 
 
 # ============================================================
+# PREDICTION FUNCTIONS
+# ============================================================
+
+
+def _prepare_prediction_input(input_data, feature_columns, model_name):
+    """Here I validate and arrange inputs before sending them to a saved model."""
+
+    if isinstance(input_data, dict):
+        input_data = pd.DataFrame([input_data])
+    elif not isinstance(input_data, pd.DataFrame):
+        raise TypeError(
+            "input_data must be a dictionary or pandas DataFrame."
+        )
+
+    if input_data.empty:
+        raise ValueError("At least one patient record is required.")
+
+    missing_features = [
+        column for column in feature_columns
+        if column not in input_data.columns
+    ]
+    if missing_features:
+        raise ValueError(
+            f"Missing features for {model_name}: {missing_features}"
+        )
+
+    # Here I keep only the columns and order expected by the trained model.
+    X = input_data[feature_columns].copy()
+
+    # Here I reject missing values instead of silently guessing patient data.
+    if X.isna().any().any():
+        missing_columns = X.columns[X.isna().any()].tolist()
+        raise ValueError(
+            f"Missing values in {model_name}: {missing_columns}"
+        )
+
+    # Here I validate numerical fields differently for triage and patient flow.
+    if all(column in X.columns for column in FLOW_NUMERICAL_FEATURES):
+        allowed_values = {
+            "Priority": {1, 2, 3},
+            "IsPeakArrival": {0, 1},
+            "NumDoctors": {1, 2, 3, 4},
+            "PeakLimit": {120, 240, 360},
+        }
+
+        for column in FLOW_NUMERICAL_FEATURES:
+            converted = pd.to_numeric(X[column], errors="coerce")
+
+            if converted.isna().any():
+                raise ValueError(f"{column} must contain numeric values.")
+
+            if not np.isfinite(converted.to_numpy(dtype=float)).all():
+                raise ValueError(f"{column} must contain finite numeric values.")
+
+            X[column] = converted
+
+            if column in allowed_values:
+                invalid = ~X[column].isin(allowed_values[column])
+                if invalid.any():
+                    raise ValueError(
+                        f"Invalid {column} value(s). "
+                        f"Allowed values: {sorted(allowed_values[column])}"
+                    )
+
+        if (X["ArrivalTime"] < 0).any():
+            raise ValueError("ArrivalTime cannot be negative.")
+
+        # Here I validate the scenario against the categories represented in this project.
+        if "Scenario" in X.columns:
+            allowed_scenarios = {
+                "Baseline_2Doc_240Peak",
+                "Staffing_1Doc",
+                "Staffing_3Doc",
+                "Staffing_4Doc",
+                "Peak_120Min",
+                "Peak_360Min",
+            }
+            invalid = ~X["Scenario"].isin(allowed_scenarios)
+            if invalid.any():
+                invalid_values = X.loc[invalid, "Scenario"].unique().tolist()
+                raise ValueError(
+                    f"Unknown scenario value(s): {invalid_values}. "
+                    f"Supported scenarios: {sorted(allowed_scenarios)}"
+                )
+
+    elif all(column in X.columns for column in TRIAGE_NUMERICAL_FEATURES):
+        for column in TRIAGE_NUMERICAL_FEATURES:
+            converted = pd.to_numeric(X[column], errors="coerce")
+
+            if converted.isna().any():
+                raise ValueError(f"{column} must contain numeric values.")
+
+            if not np.isfinite(converted.to_numpy(dtype=float)).all():
+                raise ValueError(f"{column} must contain finite numeric values.")
+
+            X[column] = converted
+
+    return X
+
+
+def predict_triage(input_data, model_package=None):
+    """Here I predict the KTAS triage category for each patient."""
+    if model_package is None:
+        model_package = load_triage_model()
+
+    X = _prepare_prediction_input(
+        input_data,
+        model_package["feature_columns"],
+        "triage prediction"
+    )
+
+    # Here I reuse the fitted preprocessor saved with the classifier.
+    X_processed = model_package["preprocessor"].transform(X)
+
+    return model_package["model"].predict(X_processed)
+
+
+def _predict_patient_flow_target(
+    input_data,
+    model_loader,
+    model_name,
+    model_package=None
+):
+    """Here I run a prediction using a saved patient-flow model package."""
+    if model_package is None:
+        model_package = model_loader()
+
+    X = _prepare_prediction_input(
+        input_data,
+        model_package["feature_columns"],
+        model_name
+    )
+
+    # Here I apply the original fitted preprocessor before predicting.
+    X_processed = model_package["preprocessor"].transform(X)
+
+    return model_package["model"].predict(X_processed)
+
+
+def predict_doctor_wait(input_data, model_package=None):
+    """Here I predict the expected doctor waiting time."""
+    return _predict_patient_flow_target(
+        input_data,
+        load_patient_flow_model,
+        "doctor waiting-time prediction",
+        model_package
+    )
+
+
+def predict_combined_wait(input_data, model_package=None):
+    """Here I predict the combined doctor and medication waiting time."""
+    return _predict_patient_flow_target(
+        input_data,
+        load_combined_wait_model,
+        "combined waiting-time prediction",
+        model_package
+    )
+
+
+def predict_total_time_excluding_med_wait(
+    input_data,
+    model_package=None
+):
+    """Here I predict hospital time excluding medication waiting time."""
+    return _predict_patient_flow_target(
+        input_data,
+        load_total_time_excluding_med_wait_model,
+        "total-time-excluding-medication-wait prediction",
+        model_package
+    )
+
+# ============================================================
 # SYSTEM STATUS
 # ============================================================
 
 def system_status():
     """Here I display the current status of the project components."""
     print("\n========== PREDICT-CARE AI STATUS ==========")
-    print("Triage Classification       : READY")
-    print("Doctor Wait Prediction      : READY")
-    print("Medication Wait Prediction  : READY")
-    print("Combined Wait Prediction    : READY")
-    print("Total Time Excluding Med Wait: READY")
-    print("Model Evaluation            : READY")
-    print("Prediction                  : READY")
-    print("Model Saving                : READY")
-    print("Model Loading               : READY")
-    print("\nAdditional project components:")
+    print("Triage training/prediction  : IMPLEMENTED")
+    print("Doctor wait prediction      : IMPLEMENTED")
+    print("Medication wait prediction  : IMPLEMENTED")
+    print("Combined wait prediction    : IMPLEMENTED")
+    print("Total time prediction       : IMPLEMENTED")
+    print("Model evaluation/saving     : IMPLEMENTED")
+    print("Saved-model loading         : IMPLEMENTED")
+    print("\nAdditional project components (integration status not checked here):")
     print("Time-Series Analysis        : SEPARATE MODULE")
     print("Speech Recognition          : SEPARATE MODULE")
     print("Text-to-Speech              : SEPARATE MODULE")
