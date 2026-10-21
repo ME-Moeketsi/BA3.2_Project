@@ -10,3 +10,5 @@ pyttsx3
 keras
 torch
 matplotlib
+tkinter
+SpeechRecognition
