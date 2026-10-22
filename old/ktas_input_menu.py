@@ -1,6 +1,6 @@
 
 import speech_recognition as sr
-from predict_ktas import predict_ktas
+from old.predict_ktas import predict_ktas
 
 
 # ----- SPEECH INPUT FUNCTION -----

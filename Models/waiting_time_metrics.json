@@ -1,0 +1,23 @@
+{
+  "dataset": "Data\\patient_flow_cleaned.csv",
+  "rows_total": 60000,
+  "rows_train": 48000,
+  "rows_test": 12000,
+  "random_state": 42,
+  "features": [
+    "Priority",
+    "ArrivalTime",
+    "NumDoctors",
+    "IsPeakArrival"
+  ],
+  "targets": {
+    "DocWaitTime": {
+      "mae_minutes": 27.19,
+      "r2": 0.978
+    },
+    "TotalTimeInHospital": {
+      "mae_minutes": 28.13,
+      "r2": 0.978
+    }
+  }
+}

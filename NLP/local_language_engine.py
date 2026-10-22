@@ -1,10 +1,9 @@
-
 """
 Predict-Care AI — Local Language Understanding Engine
 
 This version does not use Ollama, a generative LLM, or a cloud API.
 It uses local intent classification, rules, and fixed response templates.
-It reuses the existing NLP triage classifier when available.
+It reuses the existing NLP triage pipeline when available.
 """
 
 import re
@@ -18,9 +17,9 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
-# I am connecting to the existing Predict-Care AI complaint classifier.
+# I am connecting to the unified prediction pipeline.
 try:
-    from NLP.nlp_pipeline import predict_ktas
+    from pipeline import predict_ktas
     TRIAGE_MODEL_AVAILABLE = True
     TRIAGE_IMPORT_ERROR = None
 except Exception as error:
@@ -29,8 +28,6 @@ except Exception as error:
     TRIAGE_IMPORT_ERROR = str(error)
 
 
-# I am providing example sentences for each type of request.
-# These examples train the intent classifier when the program starts.
 TRAINING_DATA = {
     "GREETING": [
         "hello", "hi", "hey", "good morning",
@@ -82,14 +79,12 @@ TRAINING_DATA = {
     ],
 }
 
-# I am using fixed responses for facts that should not be invented.
 RESPONSES = {
     "GREETING": (
         "Hello! I am the Predict-Care AI local assistant. "
         "You can ask about KTAS, request an experimental triage prediction, "
         "or ask about waiting-time predictions."
     ),
-
     "HELP": (
         "Here is what I can do:\n"
         "1. Explain KTAS.\n"
@@ -99,28 +94,23 @@ RESPONSES = {
         "Example: /triage headache\n"
         "Type /quit to exit."
     ),
-
     "EXPLAIN_KTAS": (
         "KTAS stands for Korean Triage and Acuity Scale. "
         "It is a system used to prioritize patients according to urgency. "
         "A Predict-Care AI output is an experimental model prediction, "
         "not a clinical assessment."
     ),
-
     "PREDICT_WAIT": (
         "I recognized your waiting-time request. However, this version "
         "is not yet connected to a verified patient-specific waiting-time "
         "input schema. I will not invent a waiting-time estimate."
     ),
-
     "PREDICT_MEDICATION_WAIT": (
         "I recognized your medication-collection waiting-time request. "
         "The exact input features required by the existing medication-wait "
         "model must be verified before I can safely run that prediction. "
         "No waiting-time value has been generated."
     ),
-
-    
     "EXPLAIN_LIMITATIONS": (
         "A prediction is an estimate produced by a machine-learning model "
         "using patterns learned from training data. A clinical assessment "
@@ -130,15 +120,12 @@ RESPONSES = {
         "replace professional assessment. Predict-Care AI is an academic "
         "prototype."
     ),
-
     "GOODBYE": (
         "Goodbye! Remember that Predict-Care AI is an academic prototype, "
         "not a medical service."
     ),
 }
 
-# I am adding a fixed safety response for potentially urgent symptoms.
-# This is only a basic keyword safeguard, not a complete emergency detector.
 URGENT_RESPONSE = (
     "URGENT SAFETY NOTICE: Your message mentions symptoms that may require "
     "emergency attention. If you have chest pain with difficulty breathing, "
@@ -167,11 +154,9 @@ class LocalLanguageEngine:
         self.confidence_threshold = confidence_threshold
         self.intent_model = None
 
-        # I am training the intent classifier locally from example sentences.
         if SKLEARN_AVAILABLE:
             sentences = []
             labels = []
-
             for intent, examples in TRAINING_DATA.items():
                 sentences.extend(examples)
                 labels.extend([intent] * len(examples))
@@ -194,32 +179,27 @@ class LocalLanguageEngine:
                     )
                 )
             ])
-
             self.intent_model.fit(sentences, labels)
 
     @staticmethod
     def normalize(text):
-        """I am normalizing text before matching it."""
         text = str(text).lower()
         text = re.sub(r"[^a-z0-9'\s:/-]", " ", text)
         return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def detect_urgent_symptoms(text):
-        """I am checking for a few predefined urgent symptom phrases."""
         return bool(URGENT_REGEX.search(str(text)))
 
     @staticmethod
     def extract_complaint(text):
-        """I am removing prediction commands to extract the complaint."""
         complaint = str(text).strip()
 
         patterns = [
             r"^\s*/(?:triage|predict)\s+",
             r"^\s*predict\s+(?:the\s+)?(?:triage|KTAS)"
             r"(?:\s+level)?\s+(?:for|of)\s+",
-            r"^\s*predict\s+(?:the\s+)?(?:triage|KTAS)"
-            r"\s+",
+            r"^\s*predict\s+(?:the\s+)?(?:triage|KTAS)\s+",
             r"^\s*(?:run\s+)?(?:a\s+)?triage\s+prediction\s+for\s+",
             r"^\s*classify\s+(?:the\s+)?(?:symptom|complaint)?\s*:?\s*",
             r"^\s*(?:chief complaint|complaint)\s*:\s*",
@@ -233,24 +213,18 @@ class LocalLanguageEngine:
 
         return complaint.strip(" .?!")
 
-    
     def classify_intent(self, text):
-        """I am identifying the user's intent before selecting an action."""
         message = self.normalize(text)
 
         if not message:
             return "UNKNOWN"
 
-        # I am handling explicit commands first.
         if message in ("/help", "help"):
             return "HELP"
 
         if message in ("/quit", "/exit", "quit", "exit"):
             return "GOODBYE"
 
-        # I am checking explanation requests before prediction keywords.
-        # This prevents the word "prediction" in a question about diagnosis
-        # from accidentally triggering the triage classifier.
         explanation_phrases = (
             "diagnosis",
             "clinical assessment",
@@ -267,7 +241,6 @@ class LocalLanguageEngine:
         if any(phrase in message for phrase in explanation_phrases):
             return "EXPLAIN_LIMITATIONS"
 
-        # I am recognizing medication-collection requests.
         medication_phrases = (
             "medication",
             "medicine collection",
@@ -280,7 +253,6 @@ class LocalLanguageEngine:
         if any(phrase in message for phrase in medication_phrases):
             return "PREDICT_MEDICATION_WAIT"
 
-        # I am recognizing general waiting-time requests.
         wait_phrases = (
             "waiting time",
             "wait time",
@@ -295,7 +267,6 @@ class LocalLanguageEngine:
         if any(phrase in message for phrase in wait_phrases):
             return "PREDICT_WAIT"
 
-        # I am identifying explicit requests for triage predictions.
         prediction_phrases = (
             "predict",
             "classify",
@@ -308,9 +279,6 @@ class LocalLanguageEngine:
         if any(phrase in message for phrase in prediction_phrases):
             return "PREDICT_TRIAGE"
 
-        # I am recognizing descriptions of a patient and their symptoms.
-        # These keywords help the system handle natural descriptions instead
-        # of requiring the user to type a special command.
         patient_context = (
             "patient",
             "he has",
@@ -333,61 +301,6 @@ class LocalLanguageEngine:
             "wound",
             "fever",
             "pain",
-            "bleeding",
-            "burn",
-            "swelling",
-            "injury",
-            "dizzy",
-            "dizziness",
-            "vomiting",
-            "nausea",
-            "breathing",
-            "unconscious",
-            "headache",
-            "chest",
-        )
-
-        has_patient_context = any(
-            phrase in message for phrase in patient_context
-        )
-        has_symptom = any(
-            symptom in message for symptom in symptom_terms
-        )
-
-        if has_patient_context and has_symptom:
-            return "PREDICT_TRIAGE"
-
-        # I am handling general KTAS explanations after checking whether
-        # the user actually asked for a prediction.
-        if "ktas" in message or "acuity scale" in message:
-            return "EXPLAIN_KTAS"
-
-        # I am handling greetings.
-        if (
-            message in ("hello", "hi", "hey")
-            or message.startswith((
-                "hello ",
-                "hi ",
-                "hey ",
-                "good morning",
-                "good afternoon",
-                "good evening",
-            ))
-        ):
-            return "GREETING"
-
-        # I am recognizing help requests written in different ways.
-        if any(phrase in message for phrase in (
-            "what can you do",
-            "what can i ask",
-            "show commands",
-            "how do i use this",
-        )):
-            return "HELP"
-        symptom_terms = (
-            "wound",
-            "fever",
-            "pain",
             "pains",
             "chest pain",
             "chest pains",
@@ -405,15 +318,44 @@ class LocalLanguageEngine:
             "headache",
             "shortness of breath",
         )
-        # I am recognizing a short symptom description even when
-        # the user does not explicitly mention a patient.
-        if any(
-            symptom in message
-            for symptom in symptom_terms
-        ):
+
+        has_patient_context = any(
+            phrase in message for phrase in patient_context
+        )
+        has_symptom = any(
+            symptom in message for symptom in symptom_terms
+        )
+
+        if has_patient_context and has_symptom:
             return "PREDICT_TRIAGE"
 
-        # I am using the locally trained intent model for other requests.
+        if "ktas" in message or "acuity scale" in message:
+            return "EXPLAIN_KTAS"
+
+        if (
+            message in ("hello", "hi", "hey")
+            or message.startswith((
+                "hello ",
+                "hi ",
+                "hey ",
+                "good morning",
+                "good afternoon",
+                "good evening",
+            ))
+        ):
+            return "GREETING"
+
+        if any(phrase in message for phrase in (
+            "what can you do",
+            "what can i ask",
+            "show commands",
+            "how do i use this",
+        )):
+            return "HELP"
+
+        if any(symptom in message for symptom in symptom_terms):
+            return "PREDICT_TRIAGE"
+
         if self.intent_model is not None:
             probabilities = self.intent_model.predict_proba([message])[0]
             best_index = probabilities.argmax()
@@ -423,12 +365,8 @@ class LocalLanguageEngine:
                 return str(self.intent_model.classes_[best_index])
 
         return "UNKNOWN"
-    
 
     def run_triage_prediction(self, complaint):
-        """I am calling the existing NLP pipeline instead of creating a new one."""
-        # I am checking for immediately life-threatening descriptions
-        # before allowing the experimental triage model to run.
         critical_phrases = (
             "not breathing",
             "stopped breathing",
@@ -440,13 +378,10 @@ class LocalLanguageEngine:
             "severe chest pain",
             "crushing chest pain",
         )
-        
+
         normalized_complaint = self.normalize(complaint)
 
-        if any(
-            phrase in normalized_complaint
-            for phrase in critical_phrases
-        ):
+        if any(phrase in normalized_complaint for phrase in critical_phrases):
             return (
                 "SAFETY ALERT: This description may indicate a "
                 "medical emergency. Contact emergency services "
@@ -454,6 +389,7 @@ class LocalLanguageEngine:
                 "mobile phone or 10177 for an ambulance. Do not "
                 "wait for a Predict-Care AI prediction."
             )
+
         if not complaint:
             return (
                 "Please provide a chief complaint. Example: /triage headache"
@@ -461,24 +397,22 @@ class LocalLanguageEngine:
 
         if predict_ktas is None:
             return (
-                "The existing NLP triage classifier could not be loaded.\n"
+                "The unified prediction pipeline could not be loaded.\n"
                 "Check that you are running this program from the project root "
-                "and that the existing NLP model files and dependencies are present.\n"
+                "and that the model files and dependencies are present.\n"
                 f"Import detail: {TRIAGE_IMPORT_ERROR}"
             )
 
         try:
             result = predict_ktas(complaint)
-
-            # I am displaying the existing function's actual return value.
-            # This avoids assuming its exact return format.
             return (
-                f"Existing NLP classifier output for '{complaint}': {result}\n\n"
-                "This is an experimental model output, not a clinical assessment. "
-                "It cannot guarantee that a complaint is non-urgent. "
-                "Seek professional help for concerning symptoms."
+                f"Existing NLP classifier output for '{complaint}': "
+                f"KTAS {result['predicted_ktas']} "
+                f"({result['emergency_category']}).\n\n"
+                "This is an experimental model output, not a clinical "
+                "assessment. It cannot guarantee that a complaint is "
+                "non-urgent. Seek professional help for concerning symptoms."
             )
-
         except Exception as error:
             return (
                 "The existing NLP prediction failed. No prediction was invented.\n"
@@ -486,10 +420,8 @@ class LocalLanguageEngine:
             )
 
     def respond(self, text):
-        """I am routing the message to the appropriate action."""
         message = self.normalize(text)
 
-        # I am checking for urgent phrases before running any model.
         if self.detect_urgent_symptoms(text):
             return URGENT_RESPONSE, False
 
@@ -502,7 +434,6 @@ class LocalLanguageEngine:
         if message == "/reset":
             return "Ready for a new request. What would you like to do?", False
 
-        # I am supporting an explicit command for predictable triage requests.
         if message.startswith("/triage ") or message.startswith("/predict "):
             complaint = self.extract_complaint(text)
             return self.run_triage_prediction(complaint), False
@@ -544,7 +475,7 @@ def main():
         else "rules only (scikit-learn unavailable)"
     )
     print(
-        "Existing NLP triage classifier:",
+        "Unified prediction pipeline:",
         "available" if TRIAGE_MODEL_AVAILABLE else "not loaded"
     )
     print("Type /help for commands or /quit to exit.")

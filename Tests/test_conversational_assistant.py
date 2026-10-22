@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from NLP.conversational_assistant import PredictCareAssistant, urgent_warning
+from old.conversational_assistant import PredictCareAssistant, urgent_warning
 
 
 class TestUrgentWarning(unittest.TestCase):

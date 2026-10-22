@@ -283,7 +283,7 @@ def run_nlp_checks():
             print(f"FAIL | {name}" + (f" — {detail}" if detail else ""))
 
     try:
-        from NLP.nlp_pipeline import load_nlp_model, predict_ktas
+        from old.nlp_pipeline import load_nlp_model, predict_ktas
 
         model, vectorizer = load_nlp_model()
         report("Load NLP classifier and TF-IDF vectorizer", True)

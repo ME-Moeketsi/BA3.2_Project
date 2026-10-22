@@ -48,7 +48,7 @@ from healthcare_ai import (
     load_patient_flow_model,
 )
 
-from NLP.nlp_pipeline import predict_ktas as predict_nlp_ktas
+from old.nlp_pipeline import predict_ktas as predict_nlp_ktas
 
 from deep_learning import (
     load_deep_learning_model,

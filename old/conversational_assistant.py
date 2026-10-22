@@ -176,7 +176,7 @@ class PredictCareAssistant:
 
 def _load_nlp_predictor():
     """Load the existing project classifier lazily to avoid startup side effects."""
-    from NLP.nlp_pipeline import predict_ktas
+    from old.nlp_pipeline import predict_ktas
     return predict_ktas
 
 

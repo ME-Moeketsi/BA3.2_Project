@@ -21,7 +21,7 @@ from deep_learning import (
     load_deep_learning_model,
     predict_ktas as predict_deep_learning_ktas,
 )
-from NLP.nlp_pipeline import predict_ktas as predict_nlp_ktas
+from old.nlp_pipeline import predict_ktas as predict_nlp_ktas
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
