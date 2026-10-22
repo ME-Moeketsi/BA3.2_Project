@@ -563,14 +563,42 @@ def predict_ktas(model, preprocessor, patient_data):
             patient_features[column], errors="coerce"
         )
 
-    for column in TRIAGE_CATEGORICAL_FEATURES:
+    # Here I align inference-time dtypes with training-time dtypes.
+    # During training, numeric-looking categorical columns (Group,
+    # Sex, Arrival mode, Injury, Mental, Pain) are kept as integers
+    # because the dataset stores them that way. Chief_complain is
+    # text. If I cast everything to str here, OneHotEncoder treats
+    # every value as unseen and emits all-zero vectors, which
+    # silently breaks the prediction. So I inspect the fitted
+    # encoder's categories and cast each column to match the dtype
+    # it was trained on.
+    fitted_encoder = (
+        preprocessor
+        .named_transformers_["categorical"]
+        .named_steps["onehot"]
+    )
+
+    for index, column in enumerate(TRIAGE_CATEGORICAL_FEATURES):
+        trained_dtype = fitted_encoder.categories_[index].dtype
+
+        # Here I treat blanks as missing before any casting, so a
+        # blank string cannot become a fake category.
         patient_features[column] = patient_features[column].map(
             lambda value: (
                 np.nan
                 if pd.isna(value) or not str(value).strip()
-                else str(value)
+                else value
             )
-        ).astype("object")
+        )
+
+        if pd.api.types.is_numeric_dtype(trained_dtype):
+            patient_features[column] = pd.to_numeric(
+                patient_features[column], errors="coerce"
+            )
+        else:
+            patient_features[column] = (
+                patient_features[column].astype("object")
+            )
 
     transformed_data = preprocessor.transform(patient_features)
     transformed_data = np.asarray(transformed_data, dtype=np.float32)
