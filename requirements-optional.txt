@@ -1,0 +1,8 @@
+# Optional voice and deep-learning features; NOT needed for GUI predictions.
+# PyAudio may need platform-specific system prerequisites.
+SpeechRecognition
+pyttsx3
+PyAudio
+faster-whisper
+keras
+torch

@@ -19,7 +19,10 @@ except ImportError:
 
 # I am connecting to the unified prediction pipeline.
 try:
-    from pipeline import predict_ktas
+    try:
+        from .pipeline import predict_ktas
+    except ImportError:
+        from pipeline import predict_ktas
     TRIAGE_MODEL_AVAILABLE = True
     TRIAGE_IMPORT_ERROR = None
 except Exception as error:
@@ -136,6 +139,9 @@ URGENT_RESPONSE = (
 )
 
 URGENT_PATTERNS = [
+    # These simple red-flag checks are deliberately broader than the trained
+    # classifier and take precedence over a queue-time estimate.
+    r"\b(chest pain|shortness of breath|severe difficulty breathing)\b",
     r"\bchest pain\b.{0,100}\b(difficulty breathing|can't breathe|cannot breathe|"
     r"shortness of breath|struggling to breathe)\b",
     r"\b(difficulty breathing|can't breathe|cannot breathe|"

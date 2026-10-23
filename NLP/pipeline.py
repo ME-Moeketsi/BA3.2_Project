@@ -12,12 +12,20 @@ from pathlib import Path
 
 import joblib
 
-from nlp_preprocessing import clean_text
-from waiting_time_nlp import (
-    understand_waiting_time_request,
-    generate_waiting_time_response,
-    get_clarification_message,
-)
+try:
+    from .nlp_preprocessing import clean_text
+    from .waiting_time_nlp import (
+        understand_waiting_time_request,
+        generate_waiting_time_response,
+        get_clarification_message,
+    )
+except ImportError:  # Direct execution: python NLP/pipeline.py
+    from nlp_preprocessing import clean_text
+    from waiting_time_nlp import (
+        understand_waiting_time_request,
+        generate_waiting_time_response,
+        get_clarification_message,
+    )
 
 
 # ============================================================

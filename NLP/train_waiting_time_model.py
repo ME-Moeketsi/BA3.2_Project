@@ -114,7 +114,9 @@ def train_one_target(X_train, X_test, y_train, y_test, target_name):
     """Here I am training and evaluating a single RandomForest."""
 
     model = RandomForestRegressor(
-        n_estimators=200,
+        n_estimators=120,
+        max_leaf_nodes=1024,
+        min_samples_leaf=3,
         random_state=RANDOM_STATE,
         n_jobs=-1,
     )
@@ -176,6 +178,7 @@ def main():
             "feature_columns": FEATURE_COLUMNS,
         },
         MODEL_PATH,
+        compress=3,
     )
 
     # Here I am saving the metrics so they can be quoted in the report

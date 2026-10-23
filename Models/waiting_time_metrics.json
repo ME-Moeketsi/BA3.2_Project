@@ -1,5 +1,5 @@
 {
-  "dataset": "Data\\patient_flow_cleaned.csv",
+  "dataset": "Data/patient_flow_cleaned.csv",
   "rows_total": 60000,
   "rows_train": 48000,
   "rows_test": 12000,
@@ -12,12 +12,12 @@
   ],
   "targets": {
     "DocWaitTime": {
-      "mae_minutes": 27.19,
-      "r2": 0.978
+      "mae_minutes": 26.53,
+      "r2": 0.979
     },
     "TotalTimeInHospital": {
-      "mae_minutes": 28.13,
-      "r2": 0.978
+      "mae_minutes": 27.35,
+      "r2": 0.979
     }
   }
 }

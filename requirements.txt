@@ -1,14 +1,10 @@
+# Core dependencies for the GUI/NLP + waiting-time inference and existing
+# traditional ML scripts. tkinter comes with the Python Windows installer;
+# install the OS Tk package separately on Linux.
 pandas
 numpy
-scikit-learn
-statsmodels
+scikit-learn==1.8.0
 joblib
+statsmodels
 openpyxl
-faster-whisper
-PyAudio
-pyttsx3
-keras
-torch
 matplotlib
-tkinter
-SpeechRecognition

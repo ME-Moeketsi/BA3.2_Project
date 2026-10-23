@@ -1,16 +1,24 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from voice_assistant import start_voice_assistant
-import pythoncom
+import sys
+import threading
+from pathlib import Path
+
+# The GUI must work whether launched from project root or GUI/.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from prediction_service import assess_patient
+from NLP.waiting_time_nlp import format_waiting_time
 
 # ==================================================
 # 1. MAIN WINDOW
 # ==================================================
 
 root = tk.Tk()
-root.title("AI triage estimation")
+root.title("Predict-Care AI | NLP Triage and Waiting Times")
 root.geometry("1100x750")
-root.minsize(350, 450)
+root.minsize(900, 550)
 root.configure(bg="#F1F5F9")
 root.resizable(True, True)
 
@@ -86,9 +94,9 @@ for i in range(3):
 
 # Optional headings for each section.
 section_titles = [
-    "Patient Sumary",
-    "Calculated Triage Level",
-    "Estimated Waiting Time"
+    "Patient Summary",
+    "Experimental KTAS / Urgency",
+    "Estimated Waiting Times"
 ]
 
 for section, title in zip(right_sections, section_titles):
@@ -110,7 +118,7 @@ for section, title in zip(right_sections, section_titles):
 
 summary_label = tk.Label(
     right_sections[0],
-    text="Patient Summary\n\nComplete the form and click Continue.",
+    text="Patient Summary\n\nEnter a chief complaint and click Calculate.",
     font=("Segoe UI", 10),
     bg=WHITE,
     fg=TEXT,
@@ -141,13 +149,16 @@ right_sections[0].bind(
 # CALCULATE BUTTON - SECOND RIGHT-SIDE CONTAINER
 # ==================================================
 calculate_label = tk.Label(
-right_sections[1],
-text="Calculate only after all patient information has been entered"
+    right_sections[1],
+    text="Type a chief complaint and click Calculate.\n\n"
+         "The classifier is experimental, not a clinical assessment.",
+    font=("Segoe UI", 10), bg=WHITE, fg=TEXT,
+    anchor="nw", justify="left", wraplength=220
 )
 
 calculate_label.pack(
     fill="both",
-    expand= True,
+    expand=True,
     anchor="nw",
     padx=5,
     pady=10
@@ -166,7 +177,7 @@ right_sections[1].bind(
 
 calculate_button = tk.Button(
     right_sections[1],
-    text="Calculate 🧮",
+    text="Calculate predictions",
     font=("Segoe UI", 11, "bold"),
     bg=PRIMARY,
     fg=WHITE,
@@ -177,7 +188,7 @@ calculate_button = tk.Button(
     cursor="hand2",
     padx=20,
     pady=10,
-    command=lambda: print("Calculate button clicked")
+    command=lambda: calculate_predictions()
 )
 
 calculate_button.pack(
@@ -221,20 +232,25 @@ def update_voice_status(message):
 def begin_voice_assessment():
     global voice_session
 
-    voice_button.configure(state="disabled")
-
+    # Optional feature: speech packages are not required to run predictions.
+    try:
+        from voice_assistant import start_voice_assistant
+    except ImportError as exc:
+        messagebox.showinfo(
+            "Voice input unavailable",
+            f"Optional speech dependencies are not installed: {exc}\n"
+            "You can still type patient information and calculate predictions."
+        )
+        return
+    if voice_session is not None and not voice_session.is_set():
+        voice_session.set()  # Stop an earlier interview before starting again.
     voice_session = start_voice_assistant(
-        root,
-        inputs,
-        on_status=update_voice_status
+        root, inputs, on_status=update_voice_status
     )
-
-    # Allow another interview after the current one finishes.
-    # Re-enable manually after completion if desired.
 
 voice_button = tk.Button(
     right_sections[0],
-    text="Start Voice Assessment 🎤 ",
+    text="Start Voice Assessment",
     command=begin_voice_assessment,
     font=("Segoe UI", 10, "bold"),
     bg=PRIMARY,
@@ -608,7 +624,7 @@ sex_card, sex_body = create_container(
 )
 
 # Store the selected category.
-sex_value = tk.StringVar(value="Personal")
+sex_value = tk.StringVar(value="")
 inputs["sex"] = sex_value
 
 # Create four custom radio options.
@@ -645,18 +661,12 @@ tk.Label(
 )
 
 # Store the selected quantity.
-age_value = tk.IntVar(value=1)
+age_value = tk.StringVar(value="")
 
 # Spinbox lets the user choose a number from 1 to 100.
-age_selector = tk.Spinbox(
-    age_body,
-    from_=1,
-    to=100,
-    textvariable=age_value,
-    font=("Segoe UI", 11),
-    relief="solid",
-    bd=1,
-    width=10
+age_selector = tk.Entry(
+    age_body, textvariable=age_value,
+    font=("Segoe UI", 11), relief="solid", bd=1, width=10
 )
 
 age_selector.pack(
@@ -699,7 +709,7 @@ create_radio_group(
 Complain_card, Complain_body = create_container(
     "Complain",
     "Chief Complain",
-    "Enter Paitiens Chief complain."
+    "Describe the main symptoms in your own words (required by NLP)."
 )
 
 # ------------------------------
@@ -771,7 +781,7 @@ create_radio_group(
 
 NA_card, NA_body = create_container(
     "Nurse Assessment",
-    "Nurse Assesment",
+    "Nurse Assessment",
     "Enter the Nurse's Assesment ."
 )
 
@@ -817,8 +827,8 @@ inputs["na"] = NA_value
 
 BT_card, BT_body = create_container(
     "Temprature",
-    "Body Temprature",
-    "Enter the patient's body Temprature."
+    "Body Temperature",
+    "Record measured body temperature in °C (30–45)."
 )
 
 tk.Label(
@@ -833,18 +843,12 @@ tk.Label(
 )
 
 # Store the selected quantity.
-BT_value = tk.IntVar(value=1)
+BT_value = tk.StringVar(value="")
 
 # Spinbox lets the user choose a number from 1 to 100.
-BT_selector = tk.Spinbox(
-    BT_body,
-    from_=1,
-    to=100,
-    textvariable=BT_value,
-    font=("Segoe UI", 11),
-    relief="solid",
-    bd=1,
-    width=10
+BT_selector = tk.Entry(
+    BT_body, textvariable=BT_value,
+    font=("Segoe UI", 11), relief="solid", bd=1, width=10
 )
 
 BT_selector.pack(
@@ -874,13 +878,71 @@ create_radio_group(
     [
         ("Level 1", " The patient is Alert"),
         ("Level 2", "The patient has a Verbal Response"),
-        ("Level 3", "The patient has aPain response"),
+        ("Level 3", "The patient responds to pain"),
         ("Level 4", "The patient has no response"),
 
     ],
     MS_value
 )
 
+
+# ==================================================
+# 16. HOSPITAL FLOW + LANGUAGE REQUEST
+# ==================================================
+operation_card, operation_body = create_container(
+    "HospitalFlow",
+    "Hospital operations",
+    "These values must match the simulation used to train the waiting-time models."
+)
+
+
+def add_operational_input(title, note, variable):
+    tk.Label(operation_body, text=title, bg=WHITE, fg=TEXT,
+             font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(8, 2))
+    tk.Entry(operation_body, textvariable=variable, font=("Segoe UI", 10),
+             relief="solid", bd=1).pack(fill="x", ipady=4)
+    tk.Label(operation_body, text=note, bg=WHITE, fg=MUTED,
+             font=("Segoe UI", 8), anchor="w", wraplength=280,
+             justify="left").pack(fill="x")
+
+
+arrival_minutes_var = tk.StringVar(value="")
+doctors_var = tk.StringVar(value="")
+peak_var = tk.StringVar(value="")
+request_var = tk.StringVar(value="predict both waiting times")
+
+add_operational_input(
+    "Arrival time (simulation minutes)",
+    "From 3 to 1107. Not a time of day or a real hospital ETA.",
+    arrival_minutes_var
+)
+add_operational_input(
+    "Doctors available",
+    "Choose 1–4 (the training-data range).", doctors_var
+)
+tk.Label(operation_body, text="Peak arrivals?", bg=WHITE, fg=TEXT,
+         font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(8, 2))
+ttk.Combobox(operation_body, textvariable=peak_var,
+             values=["Yes", "No"], state="readonly").pack(fill="x")
+add_operational_input(
+    "Ask AI (waiting-time NLP)",
+    "Example: 'doctor wait', 'total hospital time', or 'predict both waiting times'.",
+    request_var
+)
+
+# The third right-side card was reserved but had no content in the original GUI.
+waiting_label = tk.Label(
+    right_sections[2],
+    text="Waiting-time predictions are not calculated yet.\n\n"
+         "Enter hospital operational inputs and click Calculate.",
+    font=("Segoe UI", 10), bg=WHITE, fg=TEXT,
+    anchor="nw", justify="left", wraplength=220,
+)
+waiting_label.pack(fill="both", expand=True, padx=5, pady=10)
+right_sections[2].bind(
+    "<Configure>",
+    lambda event: waiting_label.configure(wraplength=max(100, event.width - 30))
+)
 
 # ==================================================
 # 16. RESPONSIVE CONTAINER LAYOUT
@@ -939,113 +1001,138 @@ def arrange_containers(available_width):
 # ==================================================
 
 def continue_action():
-    """Collect, validate, and display the form information."""
+    """Review only supplied fields; the NLP predictor requires the complaint."""
+    complaint = inputs["complain"].get("1.0", "end-1c").strip()
+    if not complaint:
+        messagebox.showwarning("Missing complaint", "Please describe the patient's chief complaint.")
+        return None
 
-    # ----------------------------------------------
-    # Read the radio button selections.
-    # ----------------------------------------------
+    age_text = inputs["age"].get().strip()
+    bt_text = inputs["bt"].get().strip()
+    if age_text:
+        try:
+            age = int(age_text)
+            if not 1 <= age <= 100:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Invalid age", "Enter an age between 1 and 100, or leave it blank.")
+            return None
+    if bt_text:
+        try:
+            bt = float(bt_text)
+            if not 30 <= bt <= 45:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Invalid temperature", "Enter a temperature between 30 and 45 °C, or leave it blank.")
+            return None
 
-    sex = inputs["sex"].get()
-    injury = inputs["injury"].get()
-    pain = inputs["pain"].get()
-    ms = inputs["ms"].get()
+    fields = [
+        ("Sex", inputs["sex"].get()),
+        ("Age", age_text),
+        ("Injury", inputs["injury"].get()),
+        ("Chief complaint", complaint),
+        ("Pain", inputs["pain"].get()),
+        ("Nurse assessment", inputs["na"].get()),
+        ("Body temperature (°C)", bt_text),
+        ("Mental state", inputs["ms"].get()),
+    ]
+    summary = "\n".join(f"{title}: {value}" for title, value in fields if str(value).strip())
+    summary_label.configure(text="Patient Summary\n\n" + summary)
+    return {"complaint": complaint, "summary": summary}
 
-    # ----------------------------------------------
-    # Read the Chief Complain.
-    # ----------------------------------------------
 
-    complain = inputs["complain"].get("1.0", "end-1c").strip()
-   
-
- 
-    # ----------------------------------------------
-    # Read the dropdown selection.
-    # ----------------------------------------------
-
-    na = inputs["na"].get()
-
-    # ----------------------------------------------
-    # Validate the numbers.
-    # ----------------------------------------------
-
-    try:
-        age = int(inputs["age"].get())
-
-        if not 1 <= age <= 100:
-            raise ValueError
-
-    except (ValueError, tk.TclError):
-        messagebox.showwarning(
-            "Invalid Quantity",
-            "Please enter a quantity between 1 and 100."
-        )
-        return
-    try:
-             bt = int(inputs["bt"].get())
-     
-             if not 1 <= bt <= 100:
-                 raise ValueError
-     
-    except (ValueError, tk.TclError):
-             messagebox.showwarning(
-                 "Invalid Quantity",
-                 "Please enter a quantity between 1 and 100."
-             )
-             return
-    
-  
-    # ----------------------------------------------
-    # Check required radio button selections.
-    # ----------------------------------------------
-
-    missing = []
-
-    if not sex:
-        missing.append("sex")
-
-    if not injury:
-        missing.append("injury")
-
-    if not pain:
-        missing.append("pain")
-        
-    if not ms:
-        missing.append("ms")
-
-    if missing:
-        messagebox.showwarning(
-            "Incomplete Form",
-            "Please complete the following selections:\n\n"
-            + "\n".join(missing)
-        )
+# ==================================================
+# 18. CONNECT GUI TO NLP CLASSIFIER AND WAIT-TIME REGRESSORS
+# ==================================================
+def calculate_predictions():
+    patient = continue_action()
+    if patient is None:
         return
 
- 
+    # An unfilled operations section must never become fabricated numeric data.
+    arrival_text = arrival_minutes_var.get().strip()
+    doctors_text = doctors_var.get().strip()
+    peak_text = peak_var.get().strip()
+    if not (arrival_text and doctors_text and peak_text):
+        arrival_time = num_doctors = is_peak = None
+    else:
+        try:
+            arrival_time = int(arrival_text)
+            num_doctors = int(doctors_text)
+            is_peak = {"Yes": 1, "No": 0}[peak_text]
+        except (ValueError, KeyError):
+            messagebox.showwarning(
+                "Invalid hospital input",
+                "Enter whole-number arrival minutes, whole-number doctors and Yes/No peak status."
+            )
+            return
 
-    # ----------------------------------------------
-    # Build the submission summary.
-    # ----------------------------------------------
-
-    summary = (
-        f"Patient Sex: {sex}\n"
-        f"Patient Age: {age}\n"
-        f"Injury Status: {injury}\n"
-        f"Chief Complain: {complain}\n"
-        f"Pain: {pain }\n"
-        f"Nurse Assesment: {na}\n"
-        f"Body Temprature: {bt}\n"
-        f"Mental State: {ms}"
+    request_text = request_var.get()
+    calculate_button.configure(state="disabled", text="Calculating...")
+    calculate_label.configure(
+        text="Running saved NLP triage model and hospital waiting-time models...",
+        bg=WHITE, fg=TEXT
     )
+    waiting_label.configure(text="Calculating available predictions...")
 
-    # ----------------------------------------------
-    # Display the submitted information.
-    # ----------------------------------------------
-       # Display the summary in the first right-side sub-container.
-    summary_label.configure(
-    text="Patient Summary\n\n" + summary
-    )
+    def worker():
+        try:
+            output = assess_patient(
+                patient["complaint"],
+                arrival_time=arrival_time,
+                num_doctors=num_doctors,
+                is_peak=is_peak,
+                waiting_request=request_text,
+            )
+            error = None
+        except Exception as exc:
+            output, error = None, exc
 
+        def display():
+            calculate_button.configure(state="normal", text="Calculate")
+            if error is not None:
+                calculate_label.configure(
+                    text="Prediction unavailable.\n\n"
+                         f"{type(error).__name__}: {error}\n\n"
+                         "Missing model files? See GUI/README.md for training steps."
+                )
+                waiting_label.configure(text="No waiting-time estimate produced.")
+                return
 
+            calculate_label.configure(
+                text=f"NLP-estimated KTAS: {output.ktas} / 5\n"
+                     f"Urgency indication: {output.urgency}\n\n"
+                     f"{output.risk_notice}"
+            )
+            if output.emergency_warning:
+                waiting_label.configure(text=output.waiting_message)
+                messagebox.showwarning("Urgent safety notice", output.emergency_warning)
+                return
+
+            estimates = []
+            if output.doctor_minutes is not None and output.waiting_intent in ("doctor", "both"):
+                estimates.append(
+                    f"Time to doctor: {format_waiting_time(output.doctor_minutes)} "
+                    f"({output.doctor_minutes:.1f} min)"
+                )
+            if output.total_minutes is not None and output.waiting_intent in ("total", "both"):
+                estimates.append(
+                    f"Total hospital time: {format_waiting_time(output.total_minutes)} "
+                    f"({output.total_minutes:.1f} min)"
+                )
+            if estimates:
+                estimates.extend(("", "Simulation estimates only, NOT live queue times. "
+                    "Do not delay medical care based on these outputs."))
+                waiting_label.configure(text="\n".join(estimates))
+            else:
+                waiting_label.configure(text=output.waiting_message)
+
+        try:
+            root.after(0, display)
+        except RuntimeError:
+            pass  # Window closed while calculation was in progress.
+
+    threading.Thread(target=worker, daemon=True, name="PredictCareInference").start()
 
 
 # ==================================================
@@ -1070,7 +1157,7 @@ bottom_area.pack(
 # Create the Continue button.
 continue_button = tk.Button(
     bottom_area,
-    text="Continue  →",
+    text="Preview patient summary",
     command=continue_action,
     font=("Segoe UI", 11, "bold"),
     bg=PRIMARY,
