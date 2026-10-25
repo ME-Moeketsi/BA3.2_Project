@@ -13,6 +13,8 @@
        width="150">
 </div>
 
+---
+
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
 
 Predict-Care AI is an AI-driven healthcare system designed to support patient management, triage analysis, patient flow, and hospital operational decision-making.
