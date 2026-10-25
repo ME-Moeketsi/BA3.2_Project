@@ -12,9 +12,6 @@ Run from the project root:
 from pathlib import Path
 import sys
 
-# ----------------------------------------------------------------
-# tqdm (with green bars); fall back to plain printing if missing.
-# ----------------------------------------------------------------
 try:
     from tqdm import tqdm
 except ImportError:
@@ -53,7 +50,7 @@ BAR_KW = dict(
 
 class C:
     GREEN = "\033[92m"
-    RED   = "\033[91m"
+    RED = "\033[91m"
     RESET = "\033[0m"
 
 
@@ -93,8 +90,6 @@ def find_dataset(filename):
 
 
 class CheckCounter:
-    """Only prints FAIL lines live; collapses PASS lines into a tally."""
-
     def __init__(self, name):
         self.name = name
         self.passed = 0
@@ -105,19 +100,21 @@ class CheckCounter:
             self.passed += 1
         else:
             self.failed += 1
-            msg = f"FAIL | {label}"
+            msg = "FAIL | " + label
             if detail:
-                msg += f" — {detail}"
+                msg += " - " + detail
             tqdm.write(msg)
 
     def summary(self):
         total = self.passed + self.failed
         if self.failed == 0:
-            tqdm.write(f"{self.name}: {self.passed}/{total} passed")
+            tqdm.write(self.name + ": "
+                       + str(self.passed) + "/" + str(total) + " passed")
         else:
             tqdm.write(
-                f"{self.name}: {self.passed}/{total} passed, "
-                f"{self.failed} FAILED"
+                self.name + ": "
+                + str(self.passed) + "/" + str(total) + " passed, "
+                + str(self.failed) + " FAILED"
             )
         return self.failed == 0
 
@@ -140,9 +137,8 @@ def check_files():
         "NLP classifier":     [MODEL_DIR / "ktas_nlp_model.pkl"],
         "NLP vectorizer":     [MODEL_DIR / "ktas_tfidf_vectorizer.pkl"],
         "time-series model":  [MODEL_DIR / "time_series_model.pkl"],
-        "nlp_pipeline.py":    [PROJECT_DIR / "old" / "nlp_pipeline.py",
-                               PROJECT_DIR / "nlp_pipeline.py",
-                               PROJECT_DIR / "NLP" / "nlp_pipeline.py"],
+        "nlp_pipeline.py":    [PROJECT_DIR / "NLP" / "pipeline.py",
+                               PROJECT_DIR / "old" / "nlp_pipeline.py"],
         "deep_learning.py":   [PROJECT_DIR / "deep_learning.py"],
         "healthcare_ai.py":   [PROJECT_DIR / "healthcare_ai.py"],
     }
@@ -163,10 +159,11 @@ def check_files():
     found = total - len(missing)
 
     if not missing:
-        tqdm.write(f"Files: {found}/{total} found")
+        tqdm.write("Files: " + str(found) + "/" + str(total) + " found")
     else:
         tqdm.write(
-            f"Files: {found}/{total} found — MISSING: {', '.join(missing)}"
+            "Files: " + str(found) + "/" + str(total)
+            + " found - MISSING: " + ", ".join(missing)
         )
 
     return statuses
@@ -184,7 +181,7 @@ def run_traditional_ml_checks():
         import pandas as pd
         import healthcare_ai as ai
     except Exception as exc:
-        tqdm.write(f"FAIL | import healthcare_ai — {exc}")
+        tqdm.write("FAIL | import healthcare_ai - " + str(exc))
         return False
 
     c = CheckCounter("ML")
@@ -203,9 +200,9 @@ def run_traditional_ml_checks():
         for label, loader in loaders:
             try:
                 packages[label] = loader()
-                report(True, f"Load {label}")
+                report(True, "Load " + label)
             except Exception as exc:
-                report(False, f"Load {label}", str(exc))
+                report(False, "Load " + label, str(exc))
             bar.update(1)
 
     triage_path = find_dataset("ktas_cleaned.csv")
@@ -243,9 +240,12 @@ def run_traditional_ml_checks():
     with tqdm(total=1, desc="ML triage", **BAR_KW) as bar:
         if triage_record is not None and "triage model" in packages:
             try:
-                result = ai.predict_triage(triage_record, packages["triage model"])
+                result = ai.predict_triage(
+                    triage_record, packages["triage model"]
+                )
                 ok = len(result) == 1 and int(result[0]) in {1, 2, 3, 4, 5}
-                report(ok, "Triage prediction KTAS 1-5", f"result={result}")
+                report(ok, "Triage prediction KTAS 1-5",
+                       "result=" + str(result))
             except Exception as exc:
                 report(False, "Triage prediction KTAS 1-5", str(exc))
         else:
@@ -266,19 +266,20 @@ def run_traditional_ml_checks():
     with tqdm(total=len(flow_predictors), desc="ML flow", **BAR_KW) as bar:
         for label, predictor, key in flow_predictors:
             if flow_record is None or key not in packages:
-                report(False, f"{label} prediction", "no sample/model")
+                report(False, label + " prediction", "no sample/model")
             else:
                 try:
                     r = np.asarray(
                         predictor(flow_record, packages[key])
                     ).reshape(-1)
                     ok = r.size == 1 and np.isfinite(r[0]) and r[0] >= 0
-                    report(ok, f"{label} prediction",
-                           f"value={np.round(r, 2).tolist()}")
+                    report(ok, label + " prediction",
+                           "value=" + str(np.round(r, 2).tolist()))
                 except Exception as exc:
-                    report(False, f"{label} prediction", str(exc))
+                    report(False, label + " prediction", str(exc))
             bar.update(1)
 
+    # Edge cases flow
     if flow_record is not None and "doctor-wait model" in packages:
         cases = []
 
@@ -303,19 +304,24 @@ def run_traditional_ml_checks():
         with tqdm(total=len(cases) + 1, desc="ML edge", **BAR_KW) as bar:
             for label, bad, errs in cases:
                 try:
-                    ai.predict_doctor_wait(bad, packages["doctor-wait model"])
-                    report(False, f"Edge: {label}", "accepted invalid input")
+                    ai.predict_doctor_wait(
+                        bad, packages["doctor-wait model"]
+                    )
+                    report(False, "Edge: " + label,
+                           "accepted invalid input")
                 except errs:
-                    report(True, f"Edge: {label}")
+                    report(True, "Edge: " + label)
                 except Exception as exc:
-                    report(False, f"Edge: {label}",
-                           f"{type(exc).__name__}: {exc}")
+                    report(False, "Edge: " + label,
+                           type(exc).__name__ + ": " + str(exc))
                 bar.update(1)
 
             try:
-                ai.predict_doctor_wait(pd.DataFrame(),
-                                       packages["doctor-wait model"])
-                report(False, "Edge: empty batch", "accepted empty input")
+                ai.predict_doctor_wait(
+                    pd.DataFrame(), packages["doctor-wait model"]
+                )
+                report(False, "Edge: empty batch",
+                       "accepted empty input")
             except (ValueError, TypeError):
                 report(True, "Edge: empty batch")
             bar.update(1)
@@ -335,7 +341,7 @@ def run_traditional_ml_checks():
             try:
                 r = ai.predict_triage(unknown, packages["triage model"])
                 ok = len(r) == 1 and int(r[0]) in {1, 2, 3, 4, 5}
-                report(ok, "Edge: unseen complaint", f"result={r}")
+                report(ok, "Edge: unseen complaint", "result=" + str(r))
             except Exception as exc:
                 report(False, "Edge: unseen complaint", str(exc))
             bar.update(1)
@@ -351,19 +357,20 @@ def run_nlp_checks():
     print_heading("NLP")
 
     try:
-        from old.nlp_pipeline import load_nlp_model, predict_ktas
+        from NLP.pipeline import predict_ktas, pipeline_status
     except Exception as exc:
-        tqdm.write(f"FAIL | NLP import — {exc}")
+        tqdm.write("FAIL | NLP import - " + str(exc))
         return False
 
     c = CheckCounter("NLP")
 
     with tqdm(total=1, desc="NLP load", **BAR_KW) as bar:
         try:
-            load_nlp_model()
-            c.report(True, "NLP model load")
+            status = pipeline_status()
+            c.report(status in {"READY", "PARTIAL"}, "NLP pipeline status",
+                     status)
         except Exception as exc:
-            c.report(False, "NLP model load", str(exc))
+            c.report(False, "NLP pipeline status", str(exc))
         bar.update(1)
 
     with tqdm(total=2, desc="NLP checks", **BAR_KW) as bar:
@@ -372,7 +379,8 @@ def run_nlp_checks():
             level = int(prediction["predicted_ktas"])
             ok = level in {1, 2, 3, 4, 5}
             c.report(ok, "NLP prediction KTAS 1-5",
-                     f"level={level}, cat={prediction.get('emergency_category')}")
+                     "level=" + str(level)
+                     + ", cat=" + str(prediction.get("emergency_category")))
         except Exception as exc:
             c.report(False, "NLP prediction KTAS 1-5", str(exc))
         bar.update(1)
@@ -403,7 +411,7 @@ def run_deep_learning_checks():
             TRIAGE_FEATURES, load_deep_learning_model, predict_ktas,
         )
     except Exception as exc:
-        tqdm.write(f"FAIL | DL import — {exc}")
+        tqdm.write("FAIL | DL import - " + str(exc))
         return False
 
     c = CheckCounter("DL")
@@ -440,7 +448,7 @@ def run_deep_learning_checks():
             probs = np.asarray(probs)
             ok = preds.size == 1 and int(preds[0]) in {1, 2, 3, 4, 5}
             c.report(ok, "DL prediction KTAS 1-5",
-                     f"result={preds.tolist()}")
+                     "result=" + str(preds.tolist()))
         except Exception as exc:
             probs = None
             c.report(False, "DL prediction KTAS 1-5", str(exc))
@@ -449,7 +457,7 @@ def run_deep_learning_checks():
         if probs is not None:
             shape_ok = probs.shape == (1, 5)
             c.report(shape_ok, "Probabilities shape (1,5)",
-                     f"shape={probs.shape}")
+                     "shape=" + str(probs.shape))
             prob_ok = (
                 shape_ok
                 and np.isfinite(probs).all()
@@ -457,7 +465,8 @@ def run_deep_learning_checks():
                 and np.allclose(probs.sum(axis=1), 1.0, atol=1e-5)
             )
             c.report(prob_ok, "Probabilities sum to 1",
-                     f"sum={probs[0].sum():.4f}" if shape_ok else "")
+                     "sum=" + format(probs[0].sum(), ".4f")
+                     if shape_ok else "")
         bar.update(1)
 
         batch = usable.iloc[:2].copy()
@@ -471,7 +480,8 @@ def run_deep_learning_checks():
                     and all(int(v) in {1, 2, 3, 4, 5} for v in bp)
                     and bprob.shape == (2, 5)
                 )
-                c.report(ok, "Batch of 2 patients", f"pred={bp.tolist()}")
+                c.report(ok, "Batch of 2 patients",
+                         "pred=" + str(bp.tolist()))
             except Exception as exc:
                 c.report(False, "Batch of 2 patients", str(exc))
         else:
@@ -502,26 +512,86 @@ def run_deep_learning_checks():
 
 
 # ================================================================
+# TIME-SERIES
+# ================================================================
+
+def run_time_series_checks():
+    print_heading("TIME-SERIES")
+
+    try:
+        import joblib
+        import numpy as np
+    except Exception as exc:
+        tqdm.write("FAIL | TS import - " + str(exc))
+        return False
+
+    c = CheckCounter("TS")
+    model_path = MODEL_DIR / "time_series_model.pkl"
+
+    with tqdm(total=1, desc="TS load", **BAR_KW) as bar:
+        if not model_path.is_file():
+            c.report(False, "time_series_model.pkl exists", str(model_path))
+            bar.update(1)
+            return c.summary()
+        try:
+            bundle = joblib.load(model_path)
+            ok = isinstance(bundle, dict) and len(bundle) > 0
+            c.report(ok, "time_series_model.pkl loads",
+                     str(len(bundle)) + " scenarios")
+        except Exception as exc:
+            c.report(False, "time_series_model.pkl loads", str(exc))
+            bar.update(1)
+            return c.summary()
+        bar.update(1)
+
+    scenarios = sorted(bundle.keys())
+
+    with tqdm(total=len(scenarios), desc="TS forecast",
+              **BAR_KW) as bar:
+        for scenario in scenarios:
+            entry = bundle[scenario]
+            fitted = entry.get("fitted_model")
+            if fitted is None:
+                c.report(False, scenario + " fitted_model",
+                         "missing fitted model")
+                bar.update(1)
+                continue
+            try:
+                raw = fitted.forecast(1)
+                value = float(np.asarray(raw, dtype=float).reshape(-1)[0])
+                ok = np.isfinite(value) and value >= 0
+                c.report(ok, scenario + " forecast",
+                         "next_hour=" + format(value, ".0f"))
+            except Exception as exc:
+                c.report(False, scenario + " forecast", str(exc))
+            bar.update(1)
+
+    return c.summary()
+
+
+# ================================================================
 # MAIN
 # ================================================================
 
 def main():
-    print_heading("PREDICT-CARE AI — STARTUP")
-    tqdm.write(f"Project: {PROJECT_DIR}")
-    tqdm.write(f"Python:  {sys.executable}")
+    print_heading("PREDICT-CARE AI - STARTUP")
+    tqdm.write("Project: " + str(PROJECT_DIR))
+    tqdm.write("Python:  " + sys.executable)
 
     check_files()
     ml_ok  = run_traditional_ml_checks()
     nlp_ok = run_nlp_checks()
     dl_ok  = run_deep_learning_checks()
+    ts_ok  = run_time_series_checks()
 
     print_heading("SUMMARY")
-    tqdm.write(f"Traditional ML : {tag(ml_ok)}")
-    tqdm.write(f"NLP            : {tag(nlp_ok)}")
-    tqdm.write(f"Deep Learning  : {tag(dl_ok)}")
-    tqdm.write("No training started. Prototype only — not clinical advice.")
+    tqdm.write("Traditional ML : " + tag(ml_ok))
+    tqdm.write("NLP            : " + tag(nlp_ok))
+    tqdm.write("Deep Learning  : " + tag(dl_ok))
+    tqdm.write("Time-Series    : " + tag(ts_ok))
+    tqdm.write("No training started. Prototype only - not clinical advice.")
 
-    return 0 if ml_ok and nlp_ok and dl_ok else 1
+    return 0 if (ml_ok and nlp_ok and dl_ok and ts_ok) else 1
 
 
 if __name__ == "__main__":

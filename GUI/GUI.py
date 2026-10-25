@@ -3,9 +3,13 @@ GUI.py
 
 Tkinter user interface for the AI Triage Estimation tool.
 
-This file contains NO model code. All prediction work is
-delegated to gui_logic.py so the UI and the model layer
-stay separated.
+This file contains NO model code. All prediction and
+dictation logic lives in gui_logic.py.
+
+Keyboard:
+    Enter        Submit the form
+    Space        Start / stop voice dictation
+    Ctrl+C       Quit safely
 
 Run via GUI_Pipeline.run_gui(), or directly with:
     python GUI.py
@@ -13,17 +17,9 @@ Run via GUI_Pipeline.run_gui(), or directly with:
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import signal
 import threading
 
-# Optional voice module
-try:
-    from voice_assistant import start_voice_assistant
-    VOICE_AVAILABLE = True
-except Exception:
-    VOICE_AVAILABLE = False
-    start_voice_assistant = None
-
-# Model / prediction layer
 import gui_logic
 
 
@@ -38,8 +34,8 @@ PRIMARY_DARK = "#4F46E5"
 TEXT = "#1E293B"
 MUTED = "#64748B"
 BORDER = "#DCE4F0"
-VOICE_GREEN = "#10B981"
-VOICE_GREEN_DARK = "#059669"
+VOICE_ACTIVE = "#EF4444"   # red while listening
+VOICE_IDLE = "#10B981"     # green when ready
 
 MIN_CARD_WIDTH = 300
 
@@ -50,9 +46,8 @@ MIN_CARD_WIDTH = 300
 
 def create_window():
     """
-    Build and return the main Tk window with the full GUI
-    already laid out. GUI_Pipeline.run_gui() calls this
-    and then runs root.mainloop().
+    Build and return the main Tk window. GUI_Pipeline.run_gui()
+    calls this and then runs root.mainloop().
     """
     root = tk.Tk()
     root.title("AI Triage Estimation")
@@ -65,38 +60,43 @@ def create_window():
     inputs = {}
     container_cards = []
 
-    # ---- Right panel first so its widgets are created ----
+    # Right panel first so its widgets exist.
     right = _build_right_panel(root, inputs)
     output_text = right["output_text"]
     voice_status = right["voice_status"]
-    calculate_button = right["calculate_button"]
-    voice_button = right["voice_button"]
+    submit_button = right["submit_button"]
 
-    # ---- Left scrollable form ----
+    # Left scrollable form
     form = _build_form_panel(root, inputs, container_cards)
     canvas = form["canvas"]
     scroll_frame = form["scroll_frame"]
 
-    # ---- Wire calculate button ----
-    def calculate_action():
-        _on_calculate(
-            inputs,
-            output_text,
-            calculate_button,
-        )
+    # ---- Submit handler ----
+    def submit_action():
+        _on_submit(inputs, output_text, submit_button)
 
-    calculate_button.configure(command=calculate_action)
+    submit_button.configure(command=submit_action)
 
-    # ---- Wire voice button ----
-    def voice_action():
-        _on_voice(
-            root,
-            inputs,
-            voice_button,
-            voice_status,
-        )
+    # ---- Space / Enter bindings ----
+    def on_space(event):
+        # Do not trigger Space while typing in a Text or Entry.
+        focused = root.focus_get()
+        if isinstance(focused, (tk.Entry, tk.Text, ttk.Entry, ttk.Combobox)):
+            # Only intercept when the widget is the Chief Complaint box
+            # to allow a shortcut while still permitting normal typing
+            # in other widgets.
+            if focused is inputs.get("Chief_complain"):
+                return None
+            return None
+        _toggle_dictation(root, inputs, voice_status)
+        return "break"
 
-    voice_button.configure(command=voice_action)
+    def on_enter(event):
+        submit_action()
+        return "break"
+
+    root.bind("<space>", on_space)
+    root.bind("<Return>", on_enter)
 
     # ---- Responsive layout ----
     def arrange_containers(available_width):
@@ -150,6 +150,35 @@ def create_window():
         for child in widget.winfo_children():
             bind_wheel(child)
 
+    # ---- Graceful shutdown ----
+    def shutdown(_sig=None, _frame=None):
+        try:
+            gui_logic.stop_dictation()
+        except Exception:
+            pass
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+    root.protocol("WM_DELETE_WINDOW", shutdown)
+    try:
+        signal.signal(signal.SIGINT, shutdown)
+    except Exception:
+        # Signal handling can only be installed from the main thread;
+        # this is best-effort.
+        pass
+
+    # The following schedules a periodic no-op so Ctrl+C is
+    # delivered even while Tk's main loop is blocked.
+    def _tick():
+        try:
+            root.after(250, _tick)
+        except Exception:
+            pass
+
+    root.after(250, _tick)
+
     root.update_idletasks()
     arrange_containers(canvas.winfo_width())
     bind_wheel(scroll_frame)
@@ -178,12 +207,13 @@ def _build_right_panel(root, inputs):
         bg=WHITE, fg=TEXT,
     ).pack(side="top", anchor="w", padx=12, pady=(12, 6))
 
-    # Button bar packed BEFORE output_text so it reserves space
+    # Bottom bar first (reserves space)
     button_bar = tk.Frame(container, bg=WHITE)
     button_bar.pack(side="bottom", fill="x", padx=10, pady=(4, 10))
 
+    # Voice status sits above the button row.
     voice_status = tk.Label(
-        container, text="",
+        container, text="Space = voice dictation, Enter = submit",
         font=("Segoe UI", 9), bg=WHITE, fg=MUTED,
         wraplength=280, justify="left",
     )
@@ -211,7 +241,9 @@ def _build_right_panel(root, inputs):
     _set_output(
         output_text,
         "Fill in the patient form on the left,\n"
-        "then click Calculate.\n\n"
+        "then click Submit (or press Enter).\n\n"
+        "Press Space to dictate fields by voice.\n"
+        "Press Space again to stop.\n\n"
         "The output will show:\n"
         "  - Traditional ML KTAS\n"
         "  - NLP KTAS\n"
@@ -219,38 +251,27 @@ def _build_right_panel(root, inputs):
         "  - Combined KTAS and probabilities\n"
         "  - Operational Priority\n"
         "  - Peak / Non-peak status\n"
-        "  - Predicted doctor waiting time",
+        "  - Predicted doctor waiting time\n"
+        "  - Time-series demand forecast\n"
+        "  - Consistency check",
     )
 
-    calculate_button = tk.Button(
+    submit_button = tk.Button(
         button_bar,
-        text="Calculate",
+        text="Submit",
         font=("Segoe UI", 10, "bold"),
         bg=PRIMARY, fg=WHITE,
         activebackground=PRIMARY_DARK, activeforeground=WHITE,
         relief="flat", cursor="hand2",
         padx=10, pady=9,
     )
-    calculate_button.pack(side="left", fill="x", expand=True, padx=(0, 4))
-
-    voice_button = tk.Button(
-        button_bar,
-        text="Voice" if VOICE_AVAILABLE else "Voice (unavailable)",
-        font=("Segoe UI", 10, "bold"),
-        bg=VOICE_GREEN, fg=WHITE,
-        activebackground=VOICE_GREEN_DARK, activeforeground=WHITE,
-        relief="flat", cursor="hand2",
-        padx=10, pady=9,
-        state="normal" if VOICE_AVAILABLE else "disabled",
-    )
-    voice_button.pack(side="left", fill="x", expand=True, padx=(4, 0))
+    submit_button.pack(fill="x")
 
     return {
         "container": container,
         "output_text": output_text,
         "voice_status": voice_status,
-        "calculate_button": calculate_button,
-        "voice_button": voice_button,
+        "submit_button": submit_button,
     }
 
 
@@ -282,7 +303,6 @@ def _build_form_panel(root, inputs, container_cards):
         (0, 0), window=scroll_frame, anchor="nw"
     )
 
-    # Load options via the logic layer
     options, err = gui_logic.safe_load_ktas_options()
     if err:
         print("WARNING loading KTAS options:", err)
@@ -338,7 +358,6 @@ def _build_form_panel(root, inputs, container_cards):
         "Categorical values loaded directly from the training dataset.",
     )
 
-    # Build display-labelled option lists for each categorical field.
     arrival_display = gui_logic.display_options_for(
         "Arrival mode", options["Arrival mode"]
     )
@@ -409,6 +428,10 @@ def _build_form_panel(root, inputs, container_cards):
     inputs["Patients number per hour"] = tk.StringVar(value="10")
     _spinbox(body, "Patients per Hour",
              inputs["Patients number per hour"], 1, 200)
+
+    inputs["TSHorizon"] = tk.StringVar(value="3")
+    _spinbox(body, "Forecast Horizon (hours)",
+             inputs["TSHorizon"], 1, 12)
 
     return {
         "content_area": content_area,
@@ -508,7 +531,7 @@ def _collect_raw_values(inputs):
     }
 
 
-def _on_calculate(inputs, output_text, calculate_button):
+def _on_submit(inputs, output_text, submit_button):
     try:
         patient_data = gui_logic.build_patient_data(
             _collect_raw_values(inputs)
@@ -529,14 +552,18 @@ def _on_calculate(inputs, output_text, calculate_button):
 
     num_doctors = int(inputs["NumDoctors"].get())
     peak_limit = int(inputs["PeakLimit"].get())
+    ts_horizon = int(inputs["TSHorizon"].get())
 
     _set_output(output_text, "Running predictions...\nPlease wait.")
-    calculate_button.configure(state="disabled")
+    submit_button.configure(state="disabled")
 
     def worker():
         try:
             results = gui_logic.run_full_pipeline(
-                patient_data, num_doctors, peak_limit
+                patient_data,
+                num_doctors,
+                peak_limit,
+                ts_horizon=ts_horizon,
             )
             text = gui_logic.format_results(results)
             output_text.after(0, lambda: _set_output(output_text, text))
@@ -547,23 +574,103 @@ def _on_calculate(inputs, output_text, calculate_button):
             output_text.after(0, lambda: _set_output(output_text, msg))
         finally:
             output_text.after(
-                0, lambda: calculate_button.configure(state="normal")
+                0, lambda: submit_button.configure(state="normal")
             )
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-def _on_voice(root, inputs, voice_button, voice_status):
-    if not VOICE_AVAILABLE:
-        messagebox.showinfo(
-            "Voice Unavailable",
-            "The voice_assistant module could not be loaded.",
+def _apply_dictation_to_inputs(inputs, updates):
+    """
+    Write recognised fields back into the form widgets.
+    Must run on the main thread.
+    """
+    for key, value in updates.items():
+        widget = inputs.get(key)
+        if widget is None:
+            continue
+        try:
+            if key == "Chief_complain":
+                widget.delete("1.0", "end")
+                widget.insert("1.0", value)
+            else:
+                widget.set(value)
+        except Exception:
+            pass
+
+
+def _toggle_dictation(root, inputs, voice_status):
+    """
+    Start dictation if idle, stop it if active.
+    Called by the Space-bar handler.
+    """
+    if gui_logic.is_listening():
+        gui_logic.stop_dictation()
+        voice_status.configure(
+            text="Processing your dictation...", fg=MUTED
         )
         return
-    voice_button.configure(state="disabled")
-    start_voice_assistant(
-        root, inputs,
-        on_status=lambda msg: voice_status.configure(text=msg),
+
+    if not gui_logic.speech_available():
+        voice_status.configure(
+            text="Voice input unavailable (speech_recognition / mic missing).",
+            fg=MUTED,
+        )
+        return
+
+    voice_status.configure(
+        text="Listening. Speak now, press Space again to stop.",
+        fg=VOICE_ACTIVE,
+    )
+
+    def on_transcript(transcript):
+        # Marshal to the GUI thread.
+        root.after(0, lambda t=transcript: _handle_transcript(
+            root, inputs, voice_status, t
+        ))
+
+    def on_status(message):
+        root.after(0, lambda m=message: voice_status.configure(
+            text=m, fg=MUTED
+        ))
+
+    def on_error(message):
+        root.after(0, lambda m=message: voice_status.configure(
+            text="Voice error: " + m, fg=MUTED
+        ))
+
+    started = gui_logic.start_dictation(
+        on_transcript=on_transcript,
+        on_status=on_status,
+        on_error=on_error,
+    )
+
+    if not started:
+        voice_status.configure(
+            text="Could not start dictation.", fg=MUTED
+        )
+
+
+def _handle_transcript(root, inputs, voice_status, transcript):
+    """
+    Parse a transcript and apply field updates to the form.
+    """
+    options, _err = gui_logic.safe_load_ktas_options()
+    updates = gui_logic.parse_dictation(transcript, options)
+
+    if not updates:
+        voice_status.configure(
+            text="Heard: \"" + transcript + "\" but no fields recognised.",
+            fg=MUTED,
+        )
+        return
+
+    _apply_dictation_to_inputs(inputs, updates)
+    fields = ", ".join(updates.keys())
+    voice_status.configure(
+        text="Updated " + str(len(updates))
+        + " field(s): " + fields,
+        fg=VOICE_IDLE,
     )
 
 
