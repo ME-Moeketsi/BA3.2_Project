@@ -1,21 +1,34 @@
+"""
+GUI.py
+
+Tkinter user interface for the AI Triage Estimation tool.
+
+This file contains NO model code. All prediction work is
+delegated to gui_logic.py so the UI and the model layer
+stay separated.
+
+Run via GUI_Pipeline.run_gui(), or directly with:
+    python GUI.py
+"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
-from voice_assistant import start_voice_assistant
-import pythoncom
+import threading
+
+# Optional voice module
+try:
+    from voice_assistant import start_voice_assistant
+    VOICE_AVAILABLE = True
+except Exception:
+    VOICE_AVAILABLE = False
+    start_voice_assistant = None
+
+# Model / prediction layer
+import gui_logic
+
 
 # ==================================================
-# 1. MAIN WINDOW
-# ==================================================
-
-root = tk.Tk()
-root.title("AI triage estimation")
-root.geometry("1100x750")
-root.minsize(350, 450)
-root.configure(bg="#F1F5F9")
-root.resizable(True, True)
-
-# ==================================================
-# 2. COLORS AND SETTINGS
+# COLORS
 # ==================================================
 
 BG = "#F1F5F9"
@@ -25,1085 +38,539 @@ PRIMARY_DARK = "#4F46E5"
 TEXT = "#1E293B"
 MUTED = "#64748B"
 BORDER = "#DCE4F0"
-SELECTED_BG = "#EEF2FF"
+VOICE_GREEN = "#10B981"
+VOICE_GREEN_DARK = "#059669"
 
-# Minimum preferred width of each container.
-MIN_CARD_WIDTH = 280
-
-# Store input variables and container frames.
-inputs = {}
-container_cards = []
+MIN_CARD_WIDTH = 300
 
 
 # ==================================================
-# RIGHT-SIDE CONTAINER WITH 3 EQUAL SECTIONS
+# MAIN ENTRY
 # ==================================================
 
-right_container = tk.Frame(
-    root,
-    bg=BG,
-    highlightbackground=BORDER,
-    highlightthickness=1
-)
+def create_window():
+    """
+    Build and return the main Tk window with the full GUI
+    already laid out. GUI_Pipeline.run_gui() calls this
+    and then runs root.mainloop().
+    """
+    root = tk.Tk()
+    root.title("AI Triage Estimation")
+    root.geometry("1200x780")
+    root.minsize(700, 500)
+    root.configure(bg=BG)
+    root.resizable(True, True)
 
-right_container.place(
-    relx=1.0,
-    rely=0.5,
-    relwidth=0.25,
-    relheight=0.90,
-    x=-15,
-    anchor="e"
-)
+    # Shared state
+    inputs = {}
+    container_cards = []
 
-# Configure three equally sized containers.
-right_container.grid_columnconfigure(0, weight=1)
+    # ---- Right panel first so its widgets are created ----
+    right = _build_right_panel(root, inputs)
+    output_text = right["output_text"]
+    voice_status = right["voice_status"]
+    calculate_button = right["calculate_button"]
+    voice_button = right["voice_button"]
 
-for row in range(3):
-    right_container.grid_rowconfigure(row, weight=1, uniform="right_sections")
+    # ---- Left scrollable form ----
+    form = _build_form_panel(root, inputs, container_cards)
+    canvas = form["canvas"]
+    scroll_frame = form["scroll_frame"]
 
-# Create the three sections.
-right_sections = []
+    # ---- Wire calculate button ----
+    def calculate_action():
+        _on_calculate(
+            inputs,
+            output_text,
+            calculate_button,
+        )
 
-for i in range(3):
-    section = tk.Frame(
-        right_container,
-        bg=WHITE,
-        highlightbackground=BORDER,
-        highlightthickness=1,
-        padx=10,
-        pady=10
+    calculate_button.configure(command=calculate_action)
+
+    # ---- Wire voice button ----
+    def voice_action():
+        _on_voice(
+            root,
+            inputs,
+            voice_button,
+            voice_status,
+        )
+
+    voice_button.configure(command=voice_action)
+
+    # ---- Responsive layout ----
+    def arrange_containers(available_width):
+        if not container_cards:
+            return
+        columns = max(
+            1,
+            min(3, int((available_width + 12) / (MIN_CARD_WIDTH + 12))),
+        )
+        for col in range(3):
+            scroll_frame.grid_columnconfigure(
+                col,
+                weight=1 if col < columns else 0,
+                uniform="cards" if col < columns else "",
+            )
+        for i, card in enumerate(container_cards):
+            card.grid(
+                row=i // columns,
+                column=i % columns,
+                sticky="nsew", padx=6, pady=6,
+            )
+        root.after_idle(
+            lambda: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+    def resize_content(event):
+        canvas.itemconfigure(
+            form["canvas_window"], width=event.width
+        )
+        arrange_containers(event.width)
+
+    scroll_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+    )
+    canvas.bind("<Configure>", resize_content)
+
+    # ---- Mouse wheel ----
+    def on_mousewheel(event):
+        if event.num == 4:
+            canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            canvas.yview_scroll(1, "units")
+        elif event.delta:
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    def bind_wheel(widget):
+        widget.bind("<MouseWheel>", on_mousewheel)
+        widget.bind("<Button-4>", on_mousewheel)
+        widget.bind("<Button-5>", on_mousewheel)
+        for child in widget.winfo_children():
+            bind_wheel(child)
+
+    root.update_idletasks()
+    arrange_containers(canvas.winfo_width())
+    bind_wheel(scroll_frame)
+
+    return root
+
+
+# ==================================================
+# RIGHT PANEL
+# ==================================================
+
+def _build_right_panel(root, inputs):
+    container = tk.Frame(
+        root, bg=WHITE,
+        highlightbackground=BORDER, highlightthickness=1,
+    )
+    container.place(
+        relx=1.0, rely=0.5,
+        relwidth=0.30, relheight=0.90,
+        x=-15, anchor="e",
     )
 
-    section.grid(
-        row=i,
-        column=0,
-        sticky="nsew",
-        padx=6,
-        pady=6
-    )
-
-    right_sections.append(section)
-
-# Optional headings for each section.
-section_titles = [
-    "Patient Sumary",
-    "Calculated Triage Level",
-    "Estimated Waiting Time"
-]
-
-for section, title in zip(right_sections, section_titles):
     tk.Label(
-        section,
-        text=title,
-        font=("Segoe UI", 12, "bold"),
-        bg=WHITE,
-        fg=TEXT,
-        anchor="w"
-    ).pack(
-        fill="x"
+        container, text="Prediction Output",
+        font=("Segoe UI", 14, "bold"),
+        bg=WHITE, fg=TEXT,
+    ).pack(side="top", anchor="w", padx=12, pady=(12, 6))
+
+    # Button bar packed BEFORE output_text so it reserves space
+    button_bar = tk.Frame(container, bg=WHITE)
+    button_bar.pack(side="bottom", fill="x", padx=10, pady=(4, 10))
+
+    voice_status = tk.Label(
+        container, text="",
+        font=("Segoe UI", 9), bg=WHITE, fg=MUTED,
+        wraplength=280, justify="left",
+    )
+    voice_status.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
+
+    output_frame = tk.Frame(container, bg=WHITE)
+    output_frame.pack(side="top", fill="both", expand=True, padx=6, pady=4)
+
+    scroll = tk.Scrollbar(output_frame, orient="vertical")
+    scroll.pack(side="right", fill="y")
+
+    output_text = tk.Text(
+        output_frame,
+        wrap="word",
+        font=("Consolas", 10),
+        bg=WHITE, fg=TEXT,
+        relief="flat", bd=0,
+        padx=8, pady=8,
+        yscrollcommand=scroll.set,
+        state="disabled",
+    )
+    output_text.pack(side="left", fill="both", expand=True)
+    scroll.config(command=output_text.yview)
+
+    _set_output(
+        output_text,
+        "Fill in the patient form on the left,\n"
+        "then click Calculate.\n\n"
+        "The output will show:\n"
+        "  - Traditional ML KTAS\n"
+        "  - NLP KTAS\n"
+        "  - Deep Learning KTAS\n"
+        "  - Combined KTAS and probabilities\n"
+        "  - Operational Priority\n"
+        "  - Peak / Non-peak status\n"
+        "  - Predicted doctor waiting time",
     )
 
+    calculate_button = tk.Button(
+        button_bar,
+        text="Calculate",
+        font=("Segoe UI", 10, "bold"),
+        bg=PRIMARY, fg=WHITE,
+        activebackground=PRIMARY_DARK, activeforeground=WHITE,
+        relief="flat", cursor="hand2",
+        padx=10, pady=9,
+    )
+    calculate_button.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+    voice_button = tk.Button(
+        button_bar,
+        text="Voice" if VOICE_AVAILABLE else "Voice (unavailable)",
+        font=("Segoe UI", 10, "bold"),
+        bg=VOICE_GREEN, fg=WHITE,
+        activebackground=VOICE_GREEN_DARK, activeforeground=WHITE,
+        relief="flat", cursor="hand2",
+        padx=10, pady=9,
+        state="normal" if VOICE_AVAILABLE else "disabled",
+    )
+    voice_button.pack(side="left", fill="x", expand=True, padx=(4, 0))
+
+    return {
+        "container": container,
+        "output_text": output_text,
+        "voice_status": voice_status,
+        "calculate_button": calculate_button,
+        "voice_button": voice_button,
+    }
+
 
 # ==================================================
-# PATIENT SUMMARY DISPLAY
+# FORM PANEL
 # ==================================================
 
-summary_label = tk.Label(
-    right_sections[0],
-    text="Patient Summary\n\nComplete the form and click Continue.",
-    font=("Segoe UI", 10),
-    bg=WHITE,
-    fg=TEXT,
-    anchor="nw",
-    justify="left",
-    wraplength=220
-)
-
-summary_label.pack(
-    fill="both",
-    expand=True,
-    anchor="nw",
-    padx=5,
-    pady=10
-)
-def resize_summary(event):
-    summary_label.configure(
-        wraplength=max(100, event.width - 30)
+def _build_form_panel(root, inputs, container_cards):
+    content_area = tk.Frame(root, bg=BG)
+    content_area.place(
+        relx=0.0, rely=0.0,
+        relwidth=0.68, relheight=0.90,
+        x=12, y=12,
     )
 
-right_sections[0].bind(
-    "<Configure>",
-    resize_summary
-)
+    canvas = tk.Canvas(
+        content_area, bg=BG,
+        highlightthickness=0, borderwidth=0,
+    )
+    scrollbar = ttk.Scrollbar(
+        content_area, orient="vertical", command=canvas.yview
+    )
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
 
-
-# ==================================================
-# CALCULATE BUTTON - SECOND RIGHT-SIDE CONTAINER
-# ==================================================
-calculate_label = tk.Label(
-right_sections[1],
-text="Calculate only after all patient information has been entered"
-)
-
-calculate_label.pack(
-    fill="both",
-    expand= True,
-    anchor="nw",
-    padx=5,
-    pady=10
- )
-def resize_calculate(event):
-    calculate_label.configure(
-        wraplength=max(100, event.width - 30)
+    scroll_frame = tk.Frame(canvas, bg=BG)
+    canvas_window = canvas.create_window(
+        (0, 0), window=scroll_frame, anchor="nw"
     )
 
-right_sections[1].bind(
-    "<Configure>",
-    resize_calculate
-)
+    # Load options via the logic layer
+    options, err = gui_logic.safe_load_ktas_options()
+    if err:
+        print("WARNING loading KTAS options:", err)
 
-
-
-calculate_button = tk.Button(
-    right_sections[1],
-    text="Calculate 🧮",
-    font=("Segoe UI", 11, "bold"),
-    bg=PRIMARY,
-    fg=WHITE,
-    activebackground=PRIMARY_DARK,
-    activeforeground=WHITE,
-    relief="flat",
-    borderwidth=0,
-    cursor="hand2",
-    padx=20,
-    pady=10,
-    command=lambda: print("Calculate button clicked")
-)
-
-calculate_button.pack(
-    fill="x",
-    padx=12,
-    pady=12
-)
-
-
-
-
-
-
-# ==================================================
-# VOICE ASSESSMENT BUTTON
-# ==================================================
-
-voice_status = tk.Label(
-    right_sections[0],
-    text="Ready for voice assessment",
-    font=("Segoe UI", 9),
-    bg=WHITE,
-    fg=MUTED,
-    wraplength=200
-)
-
-voice_status.pack(
-    fill="x",
-    padx=12,
-    pady=8
-)
-
-
-voice_session = None
-
-
-def update_voice_status(message):
-    voice_status.configure(text=message)
-
-
-def begin_voice_assessment():
-    global voice_session
-
-    voice_button.configure(state="disabled")
-
-    voice_session = start_voice_assistant(
-        root,
-        inputs,
-        on_status=update_voice_status
+    # ---------- Demographics ----------
+    _, body = _create_card(
+        scroll_frame, container_cards,
+        "Demographics",
+        "Basic patient information used by all models.",
     )
 
-    # Allow another interview after the current one finishes.
-    # Re-enable manually after completion if desired.
+    inputs["Group"] = tk.StringVar(value="1")
+    _combobox(body, "Group (1 or 2)", inputs["Group"], ["1", "2"])
 
-voice_button = tk.Button(
-    right_sections[0],
-    text="Start Voice Assessment 🎤 ",
-    command=begin_voice_assessment,
-    font=("Segoe UI", 10, "bold"),
-    bg=PRIMARY,
-    fg=WHITE,
-    activebackground=PRIMARY_DARK,
-    activeforeground=WHITE,
-    relief="flat",
-    cursor="hand2",
-    padx=10,
-    pady=10
-)
+    inputs["Sex"] = tk.StringVar(value="1")
+    _combobox(body, "Sex (1 = male, 2 = female)",
+              inputs["Sex"], ["1", "2"])
 
-voice_button.pack(
-    fill="x",
-    padx=12,
-    pady=8
-)
+    inputs["Age"] = tk.StringVar(value="30")
+    _spinbox(body, "Age", inputs["Age"], 0, 120)
 
-# ==================================================
-# 3. SCROLLABLE CONTENT AREA
-# ==================================================
-
-content_area = tk.Frame(root, bg=BG)
-
-content_area.place(
-    relx=0.0,
-    rely=0.0,
-    relwidth=0.73,
-    relheight=0.90,
-    x=12,
-    y=12
-)
-
-# Canvas makes it possible to scroll through the cards.
-canvas = tk.Canvas(
-    content_area,
-    bg=BG,
-    highlightthickness=0,
-    borderwidth=0
-)
-
-# Vertical scrollbar connected to the canvas.
-scrollbar = ttk.Scrollbar(
-    content_area,
-    orient="vertical",
-    command=canvas.yview
-)
-
-canvas.configure(yscrollcommand=scrollbar.set)
-
-canvas.pack(side="left", fill="both", expand=True)
-scrollbar.pack(side="right", fill="y")
-
-# All containers will be placed inside this frame.
-scroll_frame = tk.Frame(canvas, bg=BG)
-
-canvas_window = canvas.create_window(
-    (0, 0),
-    window=scroll_frame,
-    anchor="nw"
-)
-
-# ==================================================
-# 4. SCROLLING FUNCTIONS
-# ==================================================
-
-def update_scroll_region(event=None):
-    """Update the area that can be scrolled."""
-
-    canvas.configure(
-        scrollregion=canvas.bbox("all")
+    # ---------- Vitals ----------
+    _, body = _create_card(
+        scroll_frame, container_cards,
+        "Vitals",
+        "Numeric measurements used by the ML and DL models.",
     )
 
+    inputs["SBP"] = tk.StringVar(value="120")
+    _spinbox(body, "Systolic BP (SBP)", inputs["SBP"], 0, 300)
 
-def resize_content(event):
-    """Resize the content and rearrange the containers."""
+    inputs["DBP"] = tk.StringVar(value="80")
+    _spinbox(body, "Diastolic BP (DBP)", inputs["DBP"], 0, 200)
 
-    canvas.itemconfigure(
-        canvas_window,
-        width=event.width
+    inputs["HR"] = tk.StringVar(value="75")
+    _spinbox(body, "Heart Rate (HR)", inputs["HR"], 0, 250)
+
+    inputs["RR"] = tk.StringVar(value="16")
+    _spinbox(body, "Respiratory Rate (RR)", inputs["RR"], 0, 80)
+
+    inputs["BT"] = tk.StringVar(value="37")
+    _spinbox(body, "Body Temperature (C)", inputs["BT"],
+             25, 45, step=0.1)
+
+    inputs["Saturation"] = tk.StringVar(value="98")
+    _spinbox(body, "Oxygen Saturation (%)",
+             inputs["Saturation"], 0, 100)
+
+    # ---------- Clinical Categories ----------
+    _, body = _create_card(
+        scroll_frame, container_cards,
+        "Clinical Categories",
+        "Categorical values loaded directly from the training dataset.",
     )
 
-    arrange_containers(event.width)
-
-
-# Update scrolling when the content changes.
-scroll_frame.bind(
-    "<Configure>",
-    update_scroll_region
-)
-
-# Rearrange the cards when the window is resized.
-canvas.bind(
-    "<Configure>",
-    resize_content
-)
-
-
-def on_mousewheel(event):
-    """Scroll the form with the mouse wheel."""
-
-    if event.num == 4:
-        # Linux: scroll upward.
-        canvas.yview_scroll(-1, "units")
-
-    elif event.num == 5:
-        # Linux: scroll downward.
-        canvas.yview_scroll(1, "units")
-
-    elif event.delta:
-        # Windows and macOS mouse-wheel support.
-        canvas.yview_scroll(
-            int(-event.delta / 120),
-            "units"
-        )
-
-
-def bind_mousewheel(widget):
-    """Enable mouse-wheel scrolling over child widgets."""
-
-    widget.bind("<MouseWheel>", on_mousewheel)
-    widget.bind("<Button-4>", on_mousewheel)
-    widget.bind("<Button-5>", on_mousewheel)
-
-    for child in widget.winfo_children():
-        bind_mousewheel(child)
-
-
-# ==================================================
-# 5. CUSTOM RADIO INDICATOR
-# ==================================================
-
-def draw_radio(radio_canvas, selected):
-    """Draw a custom radio circle using a Canvas."""
-
-    radio_canvas.delete("all")
-
-    # Draw the outer circle.
-    radio_canvas.create_oval(
-        3, 3, 19, 19,
-        outline=PRIMARY if selected else "#94A3B8",
-        width=2,
-        fill=WHITE
+    # Build display-labelled option lists for each categorical field.
+    arrival_display = gui_logic.display_options_for(
+        "Arrival mode", options["Arrival mode"]
+    )
+    injury_display = gui_logic.display_options_for(
+        "Injury", options["Injury"]
+    )
+    mental_display = gui_logic.display_options_for(
+        "Mental", options["Mental"]
+    )
+    pain_display = gui_logic.display_options_for(
+        "Pain", options["Pain"]
     )
 
-    # Draw the inner circle when selected.
-    if selected:
-        radio_canvas.create_oval(
-            8, 8, 14, 14,
-            outline=PRIMARY,
-            fill=PRIMARY
-        )
+    inputs["Arrival mode"] = tk.StringVar(value=arrival_display[0])
+    _combobox(body, "Mode of Arrival",
+              inputs["Arrival mode"], arrival_display)
+
+    inputs["Injury"] = tk.StringVar(value=injury_display[0])
+    _combobox(body, "Injury", inputs["Injury"], injury_display)
+
+    inputs["Mental"] = tk.StringVar(value=mental_display[0])
+    _combobox(body, "Mental Status",
+              inputs["Mental"], mental_display)
+
+    inputs["Pain"] = tk.StringVar(value=pain_display[0])
+    _combobox(body, "Pain", inputs["Pain"], pain_display)
+
+    inputs["NRS_pain"] = tk.StringVar(value="0")
+    _spinbox(body, "NRS Pain Score (0-10)",
+             inputs["NRS_pain"], 0, 10, step=0.1)
+
+    # ---------- Chief Complaint ----------
+    _, body = _create_card(
+        scroll_frame, container_cards,
+        "Chief Complaint",
+        "Free-text reason for the visit (used by the NLP model).",
+    )
+
+    tk.Label(
+        body, text="Chief Complaint",
+        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
+    ).pack(anchor="w", pady=(0, 6))
+
+    cc_text = tk.Text(
+        body, height=5, font=("Segoe UI", 10), wrap="word",
+        relief="solid", bd=1, highlightthickness=1,
+        highlightbackground=BORDER, highlightcolor=PRIMARY,
+        padx=8, pady=8,
+    )
+    cc_text.pack(fill="both", expand=True)
+    inputs["Chief_complain"] = cc_text
+
+    # ---------- Operational ----------
+    _, body = _create_card(
+        scroll_frame, container_cards,
+        "Operational Information",
+        "Used by the patient-flow waiting-time model.",
+    )
+
+    inputs["NumDoctors"] = tk.StringVar(value="2")
+    _combobox(body, "Number of Available Doctors",
+              inputs["NumDoctors"], ["1", "2", "3", "4"])
+
+    inputs["PeakLimit"] = tk.StringVar(value="240")
+    _combobox(body, "Peak Duration (minutes)",
+              inputs["PeakLimit"], ["120", "240", "360"])
+
+    inputs["Patients number per hour"] = tk.StringVar(value="10")
+    _spinbox(body, "Patients per Hour",
+             inputs["Patients number per hour"], 1, 200)
+
+    return {
+        "content_area": content_area,
+        "canvas": canvas,
+        "scroll_frame": scroll_frame,
+        "canvas_window": canvas_window,
+    }
 
 
 # ==================================================
-# 6. REUSABLE CONTAINER CREATOR
+# WIDGET HELPERS
 # ==================================================
 
-def create_container(container_id, title, subtitle):
-    """Create a modern card with a heading and input area."""
-
-    # Main white container.
+def _create_card(parent, store, title, subtitle):
     card = tk.Frame(
-        scroll_frame,
-        bg=WHITE,
-        highlightbackground=BORDER,
-        highlightthickness=1,
-        padx=16,
-        pady=16
+        parent, bg=WHITE,
+        highlightbackground=BORDER, highlightthickness=1,
+        padx=16, pady=16,
     )
-
-    # Save the card for responsive layout.
-    container_cards.append(card)
+    store.append(card)
 
     card.grid_columnconfigure(0, weight=1)
 
-    # Container title.
     tk.Label(
-        card,
-        text=title,
-        font=("Segoe UI", 15, "bold"),
-        bg=WHITE,
-        fg=TEXT,
-        anchor="w"
-    ).grid(
-        row=0,
-        column=0,
-        sticky="ew",
-        pady=(0, 6)
-    )
+        card, text=title,
+        font=("Segoe UI", 14, "bold"),
+        bg=WHITE, fg=TEXT, anchor="w",
+    ).grid(row=0, column=0, sticky="ew", pady=(0, 4))
 
-    # Container description.
     tk.Label(
-        card,
-        text=subtitle,
+        card, text=subtitle,
         font=("Segoe UI", 9),
-        bg=WHITE,
-        fg=MUTED,
-        anchor="w",
-        justify="left",
-        wraplength=300
-    ).grid(
-        row=1,
-        column=0,
-        sticky="ew",
-        pady=(0, 14)
-    )
+        bg=WHITE, fg=MUTED,
+        anchor="w", justify="left", wraplength=300,
+    ).grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
-    # Area where input widgets will be placed.
     body = tk.Frame(card, bg=WHITE)
-
-    body.grid(
-        row=2,
-        column=0,
-        sticky="nsew"
-    )
-
+    body.grid(row=2, column=0, sticky="nsew")
     card.grid_rowconfigure(2, weight=1)
-
     return card, body
 
 
-# ==================================================
-# 7. CUSTOM RADIO BUTTON GROUP
-# ==================================================
+def _spinbox(parent, label, var, from_, to, step=1):
+    tk.Label(
+        parent, text=label,
+        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
+    ).pack(anchor="w", pady=(0, 4))
+    tk.Spinbox(
+        parent, from_=from_, to=to, increment=step,
+        textvariable=var, font=("Segoe UI", 11),
+        relief="solid", bd=1, width=12,
+    ).pack(anchor="w", ipady=4, pady=(0, 10))
 
-def create_radio_group(parent, options, variable):
-    """Create a group of clickable custom radio cards."""
 
-    widgets = []
+def _combobox(parent, label, var, values):
+    tk.Label(
+        parent, text=label,
+        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
+    ).pack(anchor="w", pady=(0, 4))
+    ttk.Combobox(
+        parent, textvariable=var, values=values,
+        state="readonly", font=("Segoe UI", 10),
+    ).pack(fill="x", ipady=4, pady=(0, 10))
 
-    def refresh():
-        """Update the appearance of every radio option."""
 
-        for title, frame, indicator, description in widgets:
-
-            selected = variable.get() == title
-
-            background = (
-                SELECTED_BG if selected else WHITE
-            )
-
-            # Highlight the selected card.
-            frame.configure(
-                bg=background,
-                highlightbackground=(
-                    PRIMARY if selected else BORDER
-                )
-            )
-
-            indicator.configure(bg=background)
-            description.configure(bg=background)
-
-            # Redraw the radio indicator.
-            draw_radio(indicator, selected)
-
-    def select_option(title):
-        """Save the selected option and refresh the group."""
-
-        variable.set(title)
-        refresh()
-            # Refresh the radio cards whenever the variable changes,
-    # including when the voice assistant updates it.
-    variable.trace_add(
-        "write",
-        lambda *_: refresh()
-    )
-
-    for title, description in options:
-
-        # Frame for one radio option.
-        option_card = tk.Frame(
-            parent,
-            bg=WHITE,
-            highlightbackground=BORDER,
-            highlightthickness=1,
-            padx=8,
-            pady=7,
-            cursor="hand2"
-        )
-
-        option_card.pack(
-            fill="x",
-            pady=3
-        )
-
-        option_card.grid_columnconfigure(1, weight=1)
-
-        # Custom radio circle.
-        indicator = tk.Canvas(
-            option_card,
-            width=22,
-            height=22,
-            bg=WHITE,
-            highlightthickness=0,
-            cursor="hand2"
-        )
-
-        indicator.grid(
-            row=0,
-            column=0,
-            rowspan=2,
-            padx=(0, 7)
-        )
-
-        # Option title.
-        title_label = tk.Label(
-            option_card,
-            text=title,
-            font=("Segoe UI", 10, "bold"),
-            bg=WHITE,
-            fg=TEXT,
-            anchor="w",
-            cursor="hand2"
-        )
-
-        title_label.grid(
-            row=0,
-            column=1,
-            sticky="ew"
-        )
-
-        # Option description.
-        description_label = tk.Label(
-            option_card,
-            text=description,
-            font=("Segoe UI", 8),
-            bg=WHITE,
-            fg=MUTED,
-            anchor="w",
-            cursor="hand2"
-        )
-
-        description_label.grid(
-            row=1,
-            column=1,
-            sticky="ew"
-        )
-
-        widgets.append(
-            (
-                title,
-                option_card,
-                indicator,
-                description_label
-            )
-        )
-
-        # Clicking anywhere on the card selects the option.
-        for widget in (
-            option_card,
-            indicator,
-            title_label,
-            description_label
-        ):
-            widget.bind(
-                "<Button-1>",
-                lambda event, t=title: select_option(t)
-            )
-
-    # Display the initial selection.
-    refresh()
-    # ==================================================
-# 8. CONTAINER 1: SEX
-# ==================================================
-
-sex_card, sex_body = create_container(
-    "Sex",
-    "Sex",
-    "Choose the Sex of the patient."
-)
-
-# Store the selected category.
-sex_value = tk.StringVar(value="Personal")
-inputs["sex"] = sex_value
-
-# Create four custom radio options.
-create_radio_group(
-    sex_body,
-    [
-        ("Male", ""),
-        ("Female", ""),
-
-    ],
-    sex_value
-)
+def _set_output(output_text, message):
+    output_text.configure(state="normal")
+    output_text.delete("1.0", "end")
+    output_text.insert("1.0", message)
+    output_text.configure(state="disabled")
 
 
 # ==================================================
-# 9. CONTAINER 2: Age
+# ACTION HANDLERS
 # ==================================================
 
-age_card, age_body = create_container(
-    "Age",
-    "Age of the Patient",
-    "Enter the age of the patient."
-)
-
-tk.Label(
-    age_body,
-    text="Age of Patient",
-    font=("Segoe UI", 9, "bold"),
-    bg=WHITE,
-    fg=TEXT
-).pack(
-    anchor="w",
-    pady=(0, 8)
-)
-
-# Store the selected quantity.
-age_value = tk.IntVar(value=1)
-
-# Spinbox lets the user choose a number from 1 to 100.
-age_selector = tk.Spinbox(
-    age_body,
-    from_=1,
-    to=100,
-    textvariable=age_value,
-    font=("Segoe UI", 11),
-    relief="solid",
-    bd=1,
-    width=10
-)
-
-age_selector.pack(
-    anchor="w",
-    ipady=5
-)
-
-inputs["age"] = age_value
-
-
-# ==================================================
-# 10. CONTAINER 3: Injury Status
-# ==================================================
-
-Injury_card, Injury_body = create_container(
-    "Injury",
-    "Injury status",
-    "Enter the Patient's Injury Status."
-)
-
-# Store the selected billing cycle.
-Injury_value = tk.StringVar(value="")
-inputs["injury"] = Injury_value
-
-create_radio_group(
-    Injury_body,
-    [
-        ("True", "There is a visible injury"),
-        ("False", "There is no visible injury"),
-
-    ],
-    Injury_value
-)
-
-
-# ==================================================
-# 11. CONTAINER 4: Chief Complain
-# ==================================================
-
-Complain_card, Complain_body = create_container(
-    "Complain",
-    "Chief Complain",
-    "Enter Paitiens Chief complain."
-)
-
-# ------------------------------
-# Complain field
-# ------------------------------
-
-tk.Label(
-    Complain_body,
-    text="Your message",
-    font=("Segoe UI", 9, "bold"),
-    bg=WHITE,
-    fg=TEXT
-).pack(
-    anchor="w",
-    pady=(0, 7)
-)
-
-# A multiline text box for longer messages.
-Complain_text = tk.Text(
-    Complain_body,
-    height=5,
-    font=("Segoe UI", 10),
-    wrap="word",
-    relief="solid",
-    bd=1,
-    highlightthickness=1,
-    highlightbackground=BORDER,
-    highlightcolor=PRIMARY,
-    padx=8,
-    pady=8
-)
-
-Complain_text.pack(
-    fill="both",
-    expand=True
-)
-
-inputs["complain"] = Complain_text
-
-
-# ==================================================
-# 12. CONTAINER 5: Pain
-# ==================================================
-
-Pain_card, Pain_body = create_container(
-    "Pain",
-    "Patient's Pain",
-    "Confirm if Patient is in pain."
-)
-
-# Store the selected Option.
-Pain_value = tk.StringVar(value="")
-inputs["pain"] = Pain_value
-
-create_radio_group(
-    Pain_body,
-    [
-        ("True", "The patient is in pain"),
-        ("False", "The patient is not in pain"),
-
-    ],
-    Pain_value
-)
-
-
-# ==================================================
-# 13. CONTAINER 6: Nurse Assessment
-# ==================================================
-
-NA_card, NA_body = create_container(
-    "Nurse Assessment",
-    "Nurse Assesment",
-    "Enter the Nurse's Assesment ."
-)
-
-tk.Label(
-    NA_body,
-    text="Assessment",
-    font=("Segoe UI", 9, "bold"),
-    bg=WHITE,
-    fg=TEXT
-).pack(
-    anchor="w",
-    pady=(0, 8)
-)
-
-# Store the dropdown selection.
-NA_value = tk.StringVar(value="")
-
-# Create a dropdown menu.
-NA_dropdown = ttk.Combobox(
-    NA_body,
-    textvariable=NA_value,
-    values=[
-        "Level 1",
-        "Level 2",
-        "Level 3",
-        "Level 4"
-    ],
-    state="readonly",
-    font=("Segoe UI", 10)
-)
-
-NA_dropdown.pack(
-    fill="x",
-    ipady=5
-)
-
-inputs["na"] = NA_value
-
-
-# ==================================================
-# 14. CONTAINER 7: Body Temprature
-# ==================================================
-
-BT_card, BT_body = create_container(
-    "Temprature",
-    "Body Temprature",
-    "Enter the patient's body Temprature."
-)
-
-tk.Label(
-    BT_body,
-    text="Temprature",
-    font=("Segoe UI", 9, "bold"),
-    bg=WHITE,
-    fg=TEXT
-).pack(
-    anchor="w",
-    pady=(0, 8)
-)
-
-# Store the selected quantity.
-BT_value = tk.IntVar(value=1)
-
-# Spinbox lets the user choose a number from 1 to 100.
-BT_selector = tk.Spinbox(
-    BT_body,
-    from_=1,
-    to=100,
-    textvariable=BT_value,
-    font=("Segoe UI", 11),
-    relief="solid",
-    bd=1,
-    width=10
-)
-
-BT_selector.pack(
-    anchor="w",
-    ipady=5
-)
-
-inputs["bt"] = BT_value
-
-
-# ==================================================
-# 15. CONTAINER 8: Mental State
-# ==================================================
-
-MS_card, MS_body = create_container(
-    "Mental State",
-    "Patient's Mental state",
-    "Select the patients Mental State."
-)
-
-# Store the selected Option.
-MS_value = tk.StringVar(value="")
-inputs["ms"] = MS_value
-
-create_radio_group(
-    MS_body,
-    [
-        ("Level 1", " The patient is Alert"),
-        ("Level 2", "The patient has a Verbal Response"),
-        ("Level 3", "The patient has aPain response"),
-        ("Level 4", "The patient has no response"),
-
-    ],
-    MS_value
-)
-
-
-# ==================================================
-# 16. RESPONSIVE CONTAINER LAYOUT
-# ==================================================
-
-def arrange_containers(available_width):
-    """
-    Arrange containers according to the available width.
-
-    Narrow window: one column.
-    Medium window: two columns.
-    Wide window: three columns.
-    """
-
-    if not container_cards:
-        return
-
-    # Determine how many cards can fit horizontally.
-    columns = max(
-        1,
-        min(
-            3,
-            int(
-                (available_width + 12)
-                / (MIN_CARD_WIDTH + 12)
-            )
-        )
-    )
-
-    # Configure the grid columns.
-    for column in range(3):
-        scroll_frame.grid_columnconfigure(
-            column,
-            weight=1 if column < columns else 0,
-            uniform="cards" if column < columns else ""
-        )
-
-    # Place each container in the appropriate row and column.
-    for index, card in enumerate(container_cards):
-
-        row = index // columns
-        column = index % columns
-
-        card.grid(
-            row=row,
-            column=column,
-            sticky="nsew",
-            padx=6,
-            pady=6
-        )
-
-    # Refresh the scrollable area after rearranging.
-    root.after_idle(update_scroll_region)
-    # ==================================================
-# 17. CONTINUE BUTTON ACTION
-# ==================================================
-
-def continue_action():
-    """Collect, validate, and display the form information."""
-
-    # ----------------------------------------------
-    # Read the radio button selections.
-    # ----------------------------------------------
-
-    sex = inputs["sex"].get()
-    injury = inputs["injury"].get()
-    pain = inputs["pain"].get()
-    ms = inputs["ms"].get()
-
-    # ----------------------------------------------
-    # Read the Chief Complain.
-    # ----------------------------------------------
-
-    complain = inputs["complain"].get("1.0", "end-1c").strip()
-   
-
- 
-    # ----------------------------------------------
-    # Read the dropdown selection.
-    # ----------------------------------------------
-
-    na = inputs["na"].get()
-
-    # ----------------------------------------------
-    # Validate the numbers.
-    # ----------------------------------------------
-
+def _collect_raw_values(inputs):
+    return {
+        "Group": inputs["Group"].get(),
+        "Sex": inputs["Sex"].get(),
+        "Age": inputs["Age"].get(),
+        "Patients number per hour":
+            inputs["Patients number per hour"].get(),
+        "Arrival mode": inputs["Arrival mode"].get(),
+        "Injury": inputs["Injury"].get(),
+        "Mental": inputs["Mental"].get(),
+        "Pain": inputs["Pain"].get(),
+        "NRS_pain": inputs["NRS_pain"].get(),
+        "SBP": inputs["SBP"].get(),
+        "DBP": inputs["DBP"].get(),
+        "HR": inputs["HR"].get(),
+        "RR": inputs["RR"].get(),
+        "BT": inputs["BT"].get(),
+        "Saturation": inputs["Saturation"].get(),
+        "Chief_complain":
+            inputs["Chief_complain"].get("1.0", "end-1c").strip(),
+    }
+
+
+def _on_calculate(inputs, output_text, calculate_button):
     try:
-        age = int(inputs["age"].get())
-
-        if not 1 <= age <= 100:
-            raise ValueError
-
-    except (ValueError, tk.TclError):
-        messagebox.showwarning(
-            "Invalid Quantity",
-            "Please enter a quantity between 1 and 100."
+        patient_data = gui_logic.build_patient_data(
+            _collect_raw_values(inputs)
         )
-        return
-    try:
-             bt = int(inputs["bt"].get())
-     
-             if not 1 <= bt <= 100:
-                 raise ValueError
-     
-    except (ValueError, tk.TclError):
-             messagebox.showwarning(
-                 "Invalid Quantity",
-                 "Please enter a quantity between 1 and 100."
-             )
-             return
-    
-  
-    # ----------------------------------------------
-    # Check required radio button selections.
-    # ----------------------------------------------
-
-    missing = []
-
-    if not sex:
-        missing.append("sex")
-
-    if not injury:
-        missing.append("injury")
-
-    if not pain:
-        missing.append("pain")
-        
-    if not ms:
-        missing.append("ms")
-
-    if missing:
+    except (ValueError, tk.TclError) as e:
         messagebox.showwarning(
-            "Incomplete Form",
-            "Please complete the following selections:\n\n"
-            + "\n".join(missing)
+            "Invalid Input",
+            "Please check your inputs:\n" + str(e),
         )
         return
 
- 
+    if not patient_data["Chief_complain"]:
+        messagebox.showwarning(
+            "Missing Complaint",
+            "Please enter the chief complaint.",
+        )
+        return
 
-    # ----------------------------------------------
-    # Build the submission summary.
-    # ----------------------------------------------
+    num_doctors = int(inputs["NumDoctors"].get())
+    peak_limit = int(inputs["PeakLimit"].get())
 
-    summary = (
-        f"Patient Sex: {sex}\n"
-        f"Patient Age: {age}\n"
-        f"Injury Status: {injury}\n"
-        f"Chief Complain: {complain}\n"
-        f"Pain: {pain }\n"
-        f"Nurse Assesment: {na}\n"
-        f"Body Temprature: {bt}\n"
-        f"Mental State: {ms}"
+    _set_output(output_text, "Running predictions...\nPlease wait.")
+    calculate_button.configure(state="disabled")
+
+    def worker():
+        try:
+            results = gui_logic.run_full_pipeline(
+                patient_data, num_doctors, peak_limit
+            )
+            text = gui_logic.format_results(results)
+            output_text.after(0, lambda: _set_output(output_text, text))
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            msg = "ERROR during prediction:\n\n" + str(e) + "\n\n" + tb
+            output_text.after(0, lambda: _set_output(output_text, msg))
+        finally:
+            output_text.after(
+                0, lambda: calculate_button.configure(state="normal")
+            )
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _on_voice(root, inputs, voice_button, voice_status):
+    if not VOICE_AVAILABLE:
+        messagebox.showinfo(
+            "Voice Unavailable",
+            "The voice_assistant module could not be loaded.",
+        )
+        return
+    voice_button.configure(state="disabled")
+    start_voice_assistant(
+        root, inputs,
+        on_status=lambda msg: voice_status.configure(text=msg),
     )
 
-    # ----------------------------------------------
-    # Display the submitted information.
-    # ----------------------------------------------
-       # Display the summary in the first right-side sub-container.
-    summary_label.configure(
-    text="Patient Summary\n\n" + summary
-    )
-
-
-
 
 # ==================================================
-# 18. FIXED BOTTOM BUTTON
+# DIRECT-RUN SUPPORT
 # ==================================================
 
-# This frame is outside the scrollable canvas.
-# Therefore, the button stays visible while scrolling.
-
-bottom_area = tk.Frame(
-    root,
-    bg=BG
-)
-
-bottom_area.pack(
-    side="bottom",
-    fill="x",
-    padx=12,
-    pady=(5, 16)
-)
-
-# Create the Continue button.
-continue_button = tk.Button(
-    bottom_area,
-    text="Continue  →",
-    command=continue_action,
-    font=("Segoe UI", 11, "bold"),
-    bg=PRIMARY,
-    fg=WHITE,
-    activebackground=PRIMARY_DARK,
-    activeforeground=WHITE,
-    relief="flat",
-    borderwidth=0,
-    cursor="hand2",
-    padx=35,
-    pady=10
-)
-
-# Keep the button centered horizontally.
-continue_button.pack(
-    anchor="center"
-)
-
-
-# ==================================================
-# 19. INITIALIZE THE APPLICATION
-# ==================================================
-
-# Calculate the initial window dimensions.
-root.update_idletasks()
-
-# Arrange the containers based on the available width.
-arrange_containers(
-    canvas.winfo_width()
-)
-
-# Enable mouse-wheel scrolling over the content.
-bind_mousewheel(scroll_frame)
-
-# Start the Tkinter event loop.
-root.mainloop()
+if __name__ == "__main__":
+    window = create_window()
+    window.mainloop()

@@ -12,12 +12,27 @@ from pathlib import Path
 
 import joblib
 
-from nlp_preprocessing import clean_text
-from waiting_time_nlp import (
-    understand_waiting_time_request,
-    generate_waiting_time_response,
-    get_clarification_message,
-)
+# ----------------------------------------------------------------
+# Package-safe imports: work both as `NLP.pipeline` and as
+# `python NLP/pipeline.py` (direct script).
+# ----------------------------------------------------------------
+try:
+    from .nlp_preprocessing import clean_text
+    from .waiting_time_nlp import (
+        understand_waiting_time_request,
+        generate_waiting_time_response,
+        get_clarification_message,
+    )
+except ImportError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+    from nlp_preprocessing import clean_text
+    from waiting_time_nlp import (
+        understand_waiting_time_request,
+        generate_waiting_time_response,
+        get_clarification_message,
+    )
 
 
 # ============================================================
@@ -97,6 +112,60 @@ def predict_ktas(chief_complaint):
         "predicted_ktas": level,
         "emergency_category": "Emergency" if level <= 3 else "Non-Emergency",
     }
+
+
+def predict_ktas_proba(chief_complaint):
+    """
+    Like predict_ktas(), but also returns a length-5 probability
+    vector aligned to KTAS levels 1..5.
+
+    Returns:
+        (label: int, probs: list[float] of length 5)
+    """
+    import numpy as np
+
+    if chief_complaint is None:
+        raise ValueError("Chief complaint cannot be empty.")
+
+    chief_complaint = str(chief_complaint).strip()
+    if not chief_complaint:
+        raise ValueError("Chief complaint cannot be empty.")
+
+    cleaned = clean_text(chief_complaint)
+    if not cleaned:
+        raise ValueError("Chief complaint contains no usable letters or numbers.")
+
+    model, tfidf = _load_ktas_artifacts()
+    features = tfidf.transform([cleaned])
+
+    model_features = getattr(model, "n_features_in_", None)
+    if model_features is not None and model_features != features.shape[1]:
+        raise ValueError(
+            "The saved NLP model and TF-IDF vectorizer are incompatible: "
+            f"model expects {model_features}, vectorizer produced {features.shape[1]}."
+        )
+
+    label = int(model.predict(features)[0])
+    if label not in {1, 2, 3, 4, 5}:
+        raise ValueError(f"The NLP model returned an unexpected KTAS level: {label}")
+
+    if hasattr(model, "predict_proba"):
+        raw = np.asarray(model.predict_proba(features)[0], dtype=float)
+        classes = list(getattr(model, "classes_", [1, 2, 3, 4, 5]))
+        aligned = np.zeros(5, dtype=float)
+        for cls, prob in zip(classes, raw):
+            idx = int(cls) - 1
+            if 0 <= idx < 5:
+                aligned[idx] = prob
+        total = aligned.sum()
+        if total > 0:
+            aligned = aligned / total
+        return label, aligned.tolist()
+
+    # Fallback: one-hot
+    one_hot = np.zeros(5, dtype=float)
+    one_hot[label - 1] = 1.0
+    return label, one_hot.tolist()
 
 
 # ============================================================

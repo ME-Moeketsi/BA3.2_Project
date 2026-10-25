@@ -2,80 +2,89 @@
 Predict-Care AI
 Application Entry Point
 
-Here I coordinate the already-trained AI components and run integration checks.
-I do not retrain models when the application starts. Training remains in the
-individual component scripts so normal startup is quick and predictable.
+Loads saved models, runs integration checks, and prints a compact
+PASS/FAIL summary. No model training is started here.
 
 Run from the project root:
     python Main.py
 """
 
 from pathlib import Path
-import importlib.util
 import sys
-import traceback
+
+# ----------------------------------------------------------------
+# tqdm (with green bars); fall back to plain printing if missing.
+# ----------------------------------------------------------------
+try:
+    from tqdm import tqdm
+except ImportError:
+    class tqdm:
+        def __init__(self, iterable=None, total=None, desc=None, **kw):
+            self.iterable = iterable
+            self.total = total
+
+        def __iter__(self):
+            return iter(self.iterable) if self.iterable else iter([])
+
+        def update(self, n=1):
+            pass
+
+        def close(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.close()
+
+        @staticmethod
+        def write(msg, **kw):
+            print(msg)
+
+
+GREEN = "green"
+BAR_KW = dict(
+    ncols=60,
+    colour=GREEN,
+    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
+)
+
+
+class C:
+    GREEN = "\033[92m"
+    RED   = "\033[91m"
+    RESET = "\033[0m"
+
+
+def tag(ok):
+    return (C.GREEN + "PASSED" + C.RESET) if ok else (C.RED + "FAILED" + C.RESET)
+
 
 PROJECT_DIR = Path(__file__).resolve().parent
 MODEL_DIR = PROJECT_DIR / "Models"
 DATA_DIRS = [PROJECT_DIR / "data", PROJECT_DIR / "Data"]
 
 
+# ================================================================
+# HELPERS
+# ================================================================
+
 def print_heading(title):
-    """Here I print consistent headings for the terminal interface."""
-    print("\n" + "=" * 68)
-    print(title)
-    print("=" * 68)
+    tqdm.write("")
+    tqdm.write("=" * 60)
+    tqdm.write(title)
+    tqdm.write("=" * 60)
 
 
 def first_existing(*paths):
-    """Here I return the first path that exists, or the first candidate."""
     for path in paths:
         if path.is_file():
             return path
     return paths[0]
 
 
-def check_files():
-    """Here I report actual file availability instead of assuming readiness."""
-    print_heading("PREDICT-CARE AI — COMPONENT AND FILE STATUS")
-
-    expected = {
-        "Traditional ML: triage model": [MODEL_DIR / "triage_model.pkl"],
-        "Traditional ML: patient-flow model": [MODEL_DIR / "patient_flow_model.pkl"],
-        "Traditional ML: medication-wait model": [MODEL_DIR / "medication_wait_model.pkl"],
-        "Traditional ML: combined-wait model": [MODEL_DIR / "combined_wait_model.pkl"],
-        "Traditional ML: total-time model": [
-            MODEL_DIR / "total_time_excluding_med_wait_model.pkl"
-        ],
-        "Deep Learning model": [MODEL_DIR / "deep_learning_triage_model.keras"],
-        "Deep Learning preprocessor": [
-            MODEL_DIR / "deep_learning_triage_preprocessor.pkl"
-        ],
-        "NLP classifier": [MODEL_DIR / "ktas_nlp_model.pkl"],
-        "NLP TF-IDF vectorizer": [MODEL_DIR / "ktas_tfidf_vectorizer.pkl"],
-        "Time-series model": [MODEL_DIR / "time_series_model.pkl"],
-        "NLP pipeline script": [
-            PROJECT_DIR / "NLP" / "nlp_pipeline.py",
-            PROJECT_DIR / "nlp_pipeline.py",
-        ],
-        "Deep Learning script": [PROJECT_DIR / "deep_learning.py"],
-        "Traditional ML engine": [PROJECT_DIR / "healthcare_ai.py"],
-    }
-
-    statuses = {}
-    for label, candidates in expected.items():
-        path = first_existing(*candidates)
-        exists = path.is_file()
-        statuses[label] = exists
-        relative = path.relative_to(PROJECT_DIR) if path.is_relative_to(PROJECT_DIR) else path
-        print(f"{'FOUND' if exists else 'MISSING':8} | {label:<39} | {relative}")
-
-    print("\nNote: a file being present confirms availability, not model quality or clinical validity.")
-    return statuses
-
-
 def find_dataset(filename):
-    """Here I look in the project's common data-folder spellings."""
     for directory in DATA_DIRS:
         candidate = directory / filename
         if candidate.is_file():
@@ -83,400 +92,436 @@ def find_dataset(filename):
     return None
 
 
+class CheckCounter:
+    """Only prints FAIL lines live; collapses PASS lines into a tally."""
+
+    def __init__(self, name):
+        self.name = name
+        self.passed = 0
+        self.failed = 0
+
+    def report(self, ok, label, detail=""):
+        if ok:
+            self.passed += 1
+        else:
+            self.failed += 1
+            msg = f"FAIL | {label}"
+            if detail:
+                msg += f" — {detail}"
+            tqdm.write(msg)
+
+    def summary(self):
+        total = self.passed + self.failed
+        if self.failed == 0:
+            tqdm.write(f"{self.name}: {self.passed}/{total} passed")
+        else:
+            tqdm.write(
+                f"{self.name}: {self.passed}/{total} passed, "
+                f"{self.failed} FAILED"
+            )
+        return self.failed == 0
+
+
+# ================================================================
+# FILE CHECKS
+# ================================================================
+
+def check_files():
+    print_heading("FILES")
+
+    expected = {
+        "triage model":       [MODEL_DIR / "triage_model.pkl"],
+        "patient-flow model": [MODEL_DIR / "patient_flow_model.pkl"],
+        "medication-wait":    [MODEL_DIR / "medication_wait_model.pkl"],
+        "combined-wait":      [MODEL_DIR / "combined_wait_model.pkl"],
+        "total-time":         [MODEL_DIR / "total_time_excluding_med_wait_model.pkl"],
+        "DL model":           [MODEL_DIR / "deep_learning_triage_model.keras"],
+        "DL preprocessor":    [MODEL_DIR / "deep_learning_triage_preprocessor.pkl"],
+        "NLP classifier":     [MODEL_DIR / "ktas_nlp_model.pkl"],
+        "NLP vectorizer":     [MODEL_DIR / "ktas_tfidf_vectorizer.pkl"],
+        "time-series model":  [MODEL_DIR / "time_series_model.pkl"],
+        "nlp_pipeline.py":    [PROJECT_DIR / "old" / "nlp_pipeline.py",
+                               PROJECT_DIR / "nlp_pipeline.py",
+                               PROJECT_DIR / "NLP" / "nlp_pipeline.py"],
+        "deep_learning.py":   [PROJECT_DIR / "deep_learning.py"],
+        "healthcare_ai.py":   [PROJECT_DIR / "healthcare_ai.py"],
+    }
+
+    statuses = {}
+    missing = []
+
+    with tqdm(total=len(expected), desc="Files", **BAR_KW) as bar:
+        for label, candidates in expected.items():
+            path = first_existing(*candidates)
+            exists = path.is_file()
+            statuses[label] = exists
+            if not exists:
+                missing.append(label)
+            bar.update(1)
+
+    total = len(expected)
+    found = total - len(missing)
+
+    if not missing:
+        tqdm.write(f"Files: {found}/{total} found")
+    else:
+        tqdm.write(
+            f"Files: {found}/{total} found — MISSING: {', '.join(missing)}"
+        )
+
+    return statuses
+
+
+# ================================================================
+# TRADITIONAL ML
+# ================================================================
+
 def run_traditional_ml_checks():
-    """Here I test saved-model loading, normal predictions, and input validation."""
-    print_heading("TRADITIONAL ML — INTEGRATION AND EDGE-CASE CHECKS")
+    print_heading("TRADITIONAL ML")
 
     try:
         import numpy as np
         import pandas as pd
         import healthcare_ai as ai
     except Exception as exc:
-        print(f"FAIL | Could not import healthcare_ai: {exc}")
+        tqdm.write(f"FAIL | import healthcare_ai — {exc}")
         return False
 
-    passed = 0
-    failed = 0
+    c = CheckCounter("ML")
+    report = c.report
 
-    def report(name, ok, detail=""):
-        nonlocal passed, failed
-        if ok:
-            passed += 1
-            print(f"PASS | {name}" + (f" — {detail}" if detail else ""))
-        else:
-            failed += 1
-            print(f"FAIL | {name}" + (f" — {detail}" if detail else ""))
-
-    # Here I load each saved model package without starting a training run.
     loaders = [
-        ("Load triage model", ai.load_triage_model),
-        ("Load doctor-wait model", ai.load_patient_flow_model),
-        ("Load medication-wait model", ai.load_medication_wait_model),
-        ("Load combined-wait model", ai.load_combined_wait_model),
-        ("Load total-time model", ai.load_total_time_excluding_med_wait_model),
+        ("triage model",      ai.load_triage_model),
+        ("doctor-wait model", ai.load_patient_flow_model),
+        ("medication-wait",   ai.load_medication_wait_model),
+        ("combined-wait",     ai.load_combined_wait_model),
+        ("total-time",        ai.load_total_time_excluding_med_wait_model),
     ]
     packages = {}
-    for label, loader in loaders:
-        try:
-            packages[label] = loader()
-            report(label, True)
-        except Exception as exc:
-            report(label, False, str(exc))
 
-    # Here I get real, schema-matching records from the cleaned datasets.
+    with tqdm(total=len(loaders), desc="ML load", **BAR_KW) as bar:
+        for label, loader in loaders:
+            try:
+                packages[label] = loader()
+                report(True, f"Load {label}")
+            except Exception as exc:
+                report(False, f"Load {label}", str(exc))
+            bar.update(1)
+
     triage_path = find_dataset("ktas_cleaned.csv")
     flow_path = find_dataset("patient_flow_cleaned.csv")
-
     triage_record = None
     flow_record = None
 
-    try:
-        if triage_path is not None:
-            triage_df = pd.read_csv(triage_path)
-            triage_features = packages.get("Load triage model", {}).get(
-                "feature_columns", getattr(ai, "TRIAGE_FEATURES", [])
-            )
-            if all(column in triage_df.columns for column in triage_features):
-                triage_record = triage_df[triage_features].dropna().iloc[0].to_dict()
-        report(
-            "Find a valid triage example",
-            triage_record is not None,
-            str(triage_path) if triage_record is not None else "cleaned dataset/features unavailable",
-        )
-    except Exception as exc:
-        report("Find a valid triage example", False, str(exc))
-
-    try:
-        if flow_path is not None:
-            flow_df = pd.read_csv(flow_path)
-            flow_features = packages.get("Load doctor-wait model", {}).get(
-                "feature_columns", getattr(ai, "FLOW_FEATURES", [])
-            )
-            if all(column in flow_df.columns for column in flow_features):
-                flow_record = flow_df[flow_features].dropna().iloc[0].to_dict()
-        report(
-            "Find a valid patient-flow example",
-            flow_record is not None,
-            str(flow_path) if flow_record is not None else "cleaned dataset/features unavailable",
-        )
-    except Exception as exc:
-        report("Find a valid patient-flow example", False, str(exc))
-
-    # Here I verify that the prediction functions work with the saved packages.
-    if triage_record is not None and "Load triage model" in packages:
+    with tqdm(total=2, desc="ML samples", **BAR_KW) as bar:
         try:
-            result = ai.predict_triage(triage_record, packages["Load triage model"])
-            valid = len(result) == 1 and int(result[0]) in {1, 2, 3, 4, 5}
-            report("Triage prediction returns KTAS 1–5", valid, f"prediction={result}")
+            if triage_path is not None:
+                df = pd.read_csv(triage_path)
+                feats = packages.get("triage model", {}).get(
+                    "feature_columns", getattr(ai, "TRIAGE_FEATURES", [])
+                )
+                if all(col in df.columns for col in feats):
+                    triage_record = df[feats].dropna().iloc[0].to_dict()
+            report(triage_record is not None, "Triage sample loaded")
         except Exception as exc:
-            report("Triage prediction returns KTAS 1–5", False, str(exc))
-    else:
-        report("Triage prediction returns KTAS 1–5", False, "No usable triage sample/model")
+            report(False, "Triage sample loaded", str(exc))
+        bar.update(1)
+
+        try:
+            if flow_path is not None:
+                df = pd.read_csv(flow_path)
+                feats = packages.get("doctor-wait model", {}).get(
+                    "feature_columns", getattr(ai, "FLOW_FEATURES", [])
+                )
+                if all(col in df.columns for col in feats):
+                    flow_record = df[feats].dropna().iloc[0].to_dict()
+            report(flow_record is not None, "Flow sample loaded")
+        except Exception as exc:
+            report(False, "Flow sample loaded", str(exc))
+        bar.update(1)
+
+    with tqdm(total=1, desc="ML triage", **BAR_KW) as bar:
+        if triage_record is not None and "triage model" in packages:
+            try:
+                result = ai.predict_triage(triage_record, packages["triage model"])
+                ok = len(result) == 1 and int(result[0]) in {1, 2, 3, 4, 5}
+                report(ok, "Triage prediction KTAS 1-5", f"result={result}")
+            except Exception as exc:
+                report(False, "Triage prediction KTAS 1-5", str(exc))
+        else:
+            report(False, "Triage prediction KTAS 1-5", "no sample/model")
+        bar.update(1)
 
     flow_predictors = [
-        ("Doctor-wait prediction", ai.predict_doctor_wait, "Load doctor-wait model"),
-        ("Medication-wait prediction", ai.predict_medication_wait, "Load medication-wait model"),
-        ("Combined-wait prediction", ai.predict_combined_wait, "Load combined-wait model"),
-        (
-            "Total-time prediction",
-            ai.predict_total_time_excluding_med_wait,
-            "Load total-time model",
-        ),
+        ("Doctor-wait",     ai.predict_doctor_wait,
+         "doctor-wait model"),
+        ("Medication-wait", ai.predict_medication_wait,
+         "medication-wait"),
+        ("Combined-wait",   ai.predict_combined_wait,
+         "combined-wait"),
+        ("Total-time",      ai.predict_total_time_excluding_med_wait,
+         "total-time"),
     ]
-    for label, predictor, package_key in flow_predictors:
-        if flow_record is None or package_key not in packages:
-            report(label, False, "No usable patient-flow sample/model")
-            continue
-        try:
-            result = np.asarray(predictor(flow_record, packages[package_key])).reshape(-1)
-            valid = result.size == 1 and np.isfinite(result[0]) and result[0] >= 0
-            report(label, valid, f"prediction={np.round(result, 3).tolist()}")
-        except Exception as exc:
-            report(label, False, str(exc))
 
-    # Here I check rejection of common invalid patient-flow input.
-    if flow_record is not None and "Load doctor-wait model" in packages:
-        invalid_cases = []
+    with tqdm(total=len(flow_predictors), desc="ML flow", **BAR_KW) as bar:
+        for label, predictor, key in flow_predictors:
+            if flow_record is None or key not in packages:
+                report(False, f"{label} prediction", "no sample/model")
+            else:
+                try:
+                    r = np.asarray(
+                        predictor(flow_record, packages[key])
+                    ).reshape(-1)
+                    ok = r.size == 1 and np.isfinite(r[0]) and r[0] >= 0
+                    report(ok, f"{label} prediction",
+                           f"value={np.round(r, 2).tolist()}")
+                except Exception as exc:
+                    report(False, f"{label} prediction", str(exc))
+            bar.update(1)
 
-        missing = dict(flow_record)
-        missing.pop("ArrivalTime", None)
-        invalid_cases.append(("Missing required feature", missing, (ValueError,)))
+    if flow_record is not None and "doctor-wait model" in packages:
+        cases = []
 
-        nan_value = dict(flow_record)
-        nan_value["ArrivalTime"] = np.nan
-        invalid_cases.append(("NaN arrival time", nan_value, (ValueError,)))
+        m = dict(flow_record); m.pop("ArrivalTime", None)
+        cases.append(("Missing feature", m, (ValueError,)))
 
-        infinite_value = dict(flow_record)
-        infinite_value["ArrivalTime"] = np.inf
-        invalid_cases.append(("Infinite arrival time", infinite_value, (ValueError,)))
+        m = dict(flow_record); m["ArrivalTime"] = np.nan
+        cases.append(("NaN arrival", m, (ValueError,)))
 
-        negative_value = dict(flow_record)
-        negative_value["ArrivalTime"] = -1
-        invalid_cases.append(("Negative arrival time", negative_value, (ValueError,)))
+        m = dict(flow_record); m["ArrivalTime"] = np.inf
+        cases.append(("Infinite arrival", m, (ValueError,)))
 
-        bad_priority = dict(flow_record)
-        bad_priority["Priority"] = 99
-        invalid_cases.append(("Unsupported priority", bad_priority, (ValueError,)))
+        m = dict(flow_record); m["ArrivalTime"] = -1
+        cases.append(("Negative arrival", m, (ValueError,)))
 
-        bad_scenario = dict(flow_record)
-        bad_scenario["Scenario"] = "__UNKNOWN_SCENARIO__"
-        invalid_cases.append(("Unknown scenario", bad_scenario, (ValueError,)))
+        m = dict(flow_record); m["Priority"] = 99
+        cases.append(("Bad priority", m, (ValueError,)))
 
-        for label, bad_input, expected_errors in invalid_cases:
+        m = dict(flow_record); m["Scenario"] = "__UNKNOWN__"
+        cases.append(("Unknown scenario", m, (ValueError,)))
+
+        with tqdm(total=len(cases) + 1, desc="ML edge", **BAR_KW) as bar:
+            for label, bad, errs in cases:
+                try:
+                    ai.predict_doctor_wait(bad, packages["doctor-wait model"])
+                    report(False, f"Edge: {label}", "accepted invalid input")
+                except errs:
+                    report(True, f"Edge: {label}")
+                except Exception as exc:
+                    report(False, f"Edge: {label}",
+                           f"{type(exc).__name__}: {exc}")
+                bar.update(1)
+
             try:
-                ai.predict_doctor_wait(bad_input, packages["Load doctor-wait model"])
-                report(label, False, "invalid input was accepted")
-            except expected_errors as exc:
-                report(label, True, str(exc))
+                ai.predict_doctor_wait(pd.DataFrame(),
+                                       packages["doctor-wait model"])
+                report(False, "Edge: empty batch", "accepted empty input")
+            except (ValueError, TypeError):
+                report(True, "Edge: empty batch")
+            bar.update(1)
+
+    if triage_record is not None and "triage model" in packages:
+        with tqdm(total=2, desc="ML triage edge", **BAR_KW) as bar:
+            bad = dict(triage_record); bad["Age"] = np.inf
+            try:
+                ai.predict_triage(bad, packages["triage model"])
+                report(False, "Edge: inf age", "accepted invalid input")
+            except (ValueError, TypeError):
+                report(True, "Edge: inf age")
+            bar.update(1)
+
+            unknown = dict(triage_record)
+            unknown["Chief_complain"] = "__UNSEEN__"
+            try:
+                r = ai.predict_triage(unknown, packages["triage model"])
+                ok = len(r) == 1 and int(r[0]) in {1, 2, 3, 4, 5}
+                report(ok, "Edge: unseen complaint", f"result={r}")
             except Exception as exc:
-                report(label, False, f"unexpected exception: {type(exc).__name__}: {exc}")
+                report(False, "Edge: unseen complaint", str(exc))
+            bar.update(1)
 
-        # Here I verify that an empty batch is rejected.
-        try:
-            ai.predict_doctor_wait(pd.DataFrame(), packages["Load doctor-wait model"])
-            report("Empty batch", False, "empty input was accepted")
-        except (ValueError, TypeError) as exc:
-            report("Empty batch", True, str(exc))
-
-    # Here I verify that invalid triage numeric values are rejected.
-    if triage_record is not None and "Load triage model" in packages:
-        bad_triage = dict(triage_record)
-        bad_triage["Age"] = np.inf
-        try:
-            ai.predict_triage(bad_triage, packages["Load triage model"])
-            report("Infinite triage age", False, "invalid input was accepted")
-        except (ValueError, TypeError) as exc:
-            report("Infinite triage age", True, str(exc))
-        except Exception as exc:
-            report("Infinite triage age", False, f"unexpected exception: {exc}")
-
-        # Unknown text categories should not crash a fitted OneHotEncoder that
-        # was configured with handle_unknown='ignore'. I test compatibility,
-        # not clinical appropriateness of the resulting prediction.
-        unknown_category = dict(triage_record)
-        unknown_category["Chief_complain"] = "__UNSEEN_TEST_CATEGORY__"
-        try:
-            result = ai.predict_triage(unknown_category, packages["Load triage model"])
-            valid = len(result) == 1 and int(result[0]) in {1, 2, 3, 4, 5}
-            report("Unseen triage text category handled safely", valid, f"prediction={result}")
-        except Exception as exc:
-            report("Unseen triage text category handled safely", False, str(exc))
-
-    print(f"\nTraditional ML checks: {passed} passed, {failed} failed.")
-    return failed == 0
+    return c.summary()
 
 
+# ================================================================
+# NLP
+# ================================================================
 
 def run_nlp_checks():
-    """Here I test the saved NLP model through its public prediction function."""
-    print_heading("NLP — INTEGRATION CHECKS")
-    passed = 0
-    failed = 0
-
-    def report(name, ok, detail=""):
-        nonlocal passed, failed
-        if ok:
-            passed += 1
-            print(f"PASS | {name}" + (f" — {detail}" if detail else ""))
-        else:
-            failed += 1
-            print(f"FAIL | {name}" + (f" — {detail}" if detail else ""))
+    print_heading("NLP")
 
     try:
         from old.nlp_pipeline import load_nlp_model, predict_ktas
-
-        model, vectorizer = load_nlp_model()
-        report("Load NLP classifier and TF-IDF vectorizer", True)
     except Exception as exc:
-        report("Load NLP classifier and TF-IDF vectorizer", False, str(exc))
-        print(f"\nNLP checks: {passed} passed, {failed} failed.")
+        tqdm.write(f"FAIL | NLP import — {exc}")
         return False
 
-    try:
-        prediction = predict_ktas("chest pain")
-        level = int(prediction["predicted_ktas"])
-        valid = level in {1, 2, 3, 4, 5}
-        report(
-            "NLP complaint prediction returns KTAS 1–5",
-            valid,
-            f"prediction={level}, category={prediction.get('emergency_category')}",
-        )
-    except Exception as exc:
-        report("NLP complaint prediction returns KTAS 1–5", False, str(exc))
+    c = CheckCounter("NLP")
 
-    try:
-        predict_ktas("   ")
-        report("NLP rejects blank complaint", False, "blank input was accepted")
-    except (ValueError, TypeError) as exc:
-        report("NLP rejects blank complaint", True, str(exc))
-    except Exception as exc:
-        report("NLP rejects blank complaint", False, f"unexpected exception: {exc}")
+    with tqdm(total=1, desc="NLP load", **BAR_KW) as bar:
+        try:
+            load_nlp_model()
+            c.report(True, "NLP model load")
+        except Exception as exc:
+            c.report(False, "NLP model load", str(exc))
+        bar.update(1)
 
-    print(f"\nNLP checks: {passed} passed, {failed} failed.")
-    return failed == 0
+    with tqdm(total=2, desc="NLP checks", **BAR_KW) as bar:
+        try:
+            prediction = predict_ktas("chest pain")
+            level = int(prediction["predicted_ktas"])
+            ok = level in {1, 2, 3, 4, 5}
+            c.report(ok, "NLP prediction KTAS 1-5",
+                     f"level={level}, cat={prediction.get('emergency_category')}")
+        except Exception as exc:
+            c.report(False, "NLP prediction KTAS 1-5", str(exc))
+        bar.update(1)
 
+        try:
+            predict_ktas("   ")
+            c.report(False, "Reject blank complaint", "accepted blank input")
+        except (ValueError, TypeError):
+            c.report(True, "Reject blank complaint")
+        except Exception as exc:
+            c.report(False, "Reject blank complaint", str(exc))
+        bar.update(1)
+
+    return c.summary()
+
+
+# ================================================================
+# DEEP LEARNING
+# ================================================================
 
 def run_deep_learning_checks():
-    """Here I test the saved neural network and preprocessor without retraining."""
-    print_heading("DEEP LEARNING — INTEGRATION CHECKS")
-    passed = 0
-    failed = 0
-
-    def report(name, ok, detail=""):
-        nonlocal passed, failed
-        if ok:
-            passed += 1
-            print(f"PASS | {name}" + (f" — {detail}" if detail else ""))
-        else:
-            failed += 1
-            print(f"FAIL | {name}" + (f" — {detail}" if detail else ""))
+    print_heading("DEEP LEARNING")
 
     try:
         import numpy as np
         import pandas as pd
         from deep_learning import (
-            TRIAGE_FEATURES,
-            load_deep_learning_model,
-            predict_ktas,
+            TRIAGE_FEATURES, load_deep_learning_model, predict_ktas,
         )
-
-        model, preprocessor, feature_names = load_deep_learning_model()
-        report("Load neural network and fitted preprocessor", True)
     except Exception as exc:
-        report("Load neural network and fitted preprocessor", False, str(exc))
-        print(f"\nDeep Learning checks: {passed} passed, {failed} failed.")
+        tqdm.write(f"FAIL | DL import — {exc}")
         return False
 
+    c = CheckCounter("DL")
+
+    with tqdm(total=1, desc="DL load", **BAR_KW) as bar:
+        try:
+            model, pre, _ = load_deep_learning_model()
+            c.report(True, "DL model load")
+        except Exception as exc:
+            c.report(False, "DL model load", str(exc))
+            bar.update(1)
+            return c.summary()
+        bar.update(1)
+
     try:
-        dataset_path = find_dataset("ktas_cleaned.csv")
-        if dataset_path is None:
-            raise FileNotFoundError(
-                "KTAS dataset not found in either data/ or Data/."
-            )
-        data = pd.read_csv(dataset_path)
-        missing = [column for column in TRIAGE_FEATURES if column not in data.columns]
-        if missing:
-            raise ValueError("Dataset is missing features: " + ", ".join(missing))
+        path = find_dataset("ktas_cleaned.csv")
+        if path is None:
+            raise FileNotFoundError("KTAS dataset not found")
+        data = pd.read_csv(path)
         usable = data[TRIAGE_FEATURES].dropna()
         if usable.empty:
-            raise ValueError("No complete patient record is available for testing.")
+            raise ValueError("no complete records")
+    except Exception as exc:
+        c.report(False, "Load DL sample", str(exc))
+        return c.summary()
 
-        sample = usable.iloc[[0]].copy()
-        predictions, probabilities = predict_ktas(model, preprocessor, sample)
-        probabilities = np.asarray(probabilities)
-        predictions = np.asarray(predictions).reshape(-1)
+    sample = usable.iloc[[0]].copy()
+    probs = None
 
-        valid_class = predictions.size == 1 and int(predictions[0]) in {1, 2, 3, 4, 5}
-        report(
-            "Deep-learning prediction returns KTAS 1–5",
-            valid_class,
-            f"prediction={predictions.tolist()}",
-        )
+    with tqdm(total=6, desc="DL checks", **BAR_KW) as bar:
+        try:
+            preds, probs = predict_ktas(model, pre, sample)
+            preds = np.asarray(preds).reshape(-1)
+            probs = np.asarray(probs)
+            ok = preds.size == 1 and int(preds[0]) in {1, 2, 3, 4, 5}
+            c.report(ok, "DL prediction KTAS 1-5",
+                     f"result={preds.tolist()}")
+        except Exception as exc:
+            probs = None
+            c.report(False, "DL prediction KTAS 1-5", str(exc))
+        bar.update(1)
 
-        valid_shape = probabilities.shape == (1, 5)
-        report(
-            "Deep-learning probability output has five classes",
-            valid_shape,
-            f"shape={probabilities.shape}",
-        )
+        if probs is not None:
+            shape_ok = probs.shape == (1, 5)
+            c.report(shape_ok, "Probabilities shape (1,5)",
+                     f"shape={probs.shape}")
+            prob_ok = (
+                shape_ok
+                and np.isfinite(probs).all()
+                and np.all(probs >= 0) and np.all(probs <= 1)
+                and np.allclose(probs.sum(axis=1), 1.0, atol=1e-5)
+            )
+            c.report(prob_ok, "Probabilities sum to 1",
+                     f"sum={probs[0].sum():.4f}" if shape_ok else "")
+        bar.update(1)
 
-        valid_probabilities = (
-            valid_shape
-            and np.isfinite(probabilities).all()
-            and np.all(probabilities >= 0)
-            and np.all(probabilities <= 1)
-            and np.allclose(probabilities.sum(axis=1), 1.0, atol=1e-5)
-        )
-        report(
-            "Deep-learning probabilities are finite and sum to one",
-            valid_probabilities,
-            f"sum={probabilities[0].sum():.6f}" if valid_shape else "",
-        )
-
-        # Here I check that the predictor supports a small batch of patient records.
         batch = usable.iloc[:2].copy()
         if len(batch) == 2:
-            batch_predictions, batch_probabilities = predict_ktas(
-                model, preprocessor, batch
-            )
-            batch_predictions = np.asarray(batch_predictions).reshape(-1)
-            batch_probabilities = np.asarray(batch_probabilities)
-            batch_ok = (
-                batch_predictions.shape == (2,)
-                and all(int(value) in {1, 2, 3, 4, 5} for value in batch_predictions)
-                and batch_probabilities.shape == (2, 5)
-                and np.isfinite(batch_probabilities).all()
-            )
-            report(
-                "Deep-learning prediction supports a two-patient batch",
-                batch_ok,
-                f"predictions={batch_predictions.tolist()}",
-            )
+            try:
+                bp, bprob = predict_ktas(model, pre, batch)
+                bp = np.asarray(bp).reshape(-1)
+                bprob = np.asarray(bprob)
+                ok = (
+                    bp.shape == (2,)
+                    and all(int(v) in {1, 2, 3, 4, 5} for v in bp)
+                    and bprob.shape == (2, 5)
+                )
+                c.report(ok, "Batch of 2 patients", f"pred={bp.tolist()}")
+            except Exception as exc:
+                c.report(False, "Batch of 2 patients", str(exc))
         else:
-            report(
-                "Deep-learning prediction supports a two-patient batch",
-                False,
-                "Dataset contains fewer than two usable records.",
-            )
+            c.report(False, "Batch of 2 patients", "not enough records")
+        bar.update(1)
 
-        # Here I verify that missing required features are rejected.
         incomplete = sample.drop(columns=[TRIAGE_FEATURES[0]])
         try:
-            predict_ktas(model, preprocessor, incomplete)
-            report("Deep learning rejects a missing feature", False, "input was accepted")
-        except ValueError as exc:
-            report("Deep learning rejects a missing feature", True, str(exc))
+            predict_ktas(model, pre, incomplete)
+            c.report(False, "Reject missing feature",
+                     "accepted invalid input")
+        except ValueError:
+            c.report(True, "Reject missing feature")
         except Exception as exc:
-            report(
-                "Deep learning rejects a missing feature",
-                False,
-                f"unexpected exception: {type(exc).__name__}: {exc}",
-            )
+            c.report(False, "Reject missing feature", str(exc))
+        bar.update(1)
 
-        # Here I verify that an empty batch cannot silently produce a prediction.
         try:
-            predict_ktas(model, preprocessor, sample.iloc[0:0])
-            report("Deep learning rejects an empty batch", False, "empty input was accepted")
-        except (ValueError, TypeError) as exc:
-            report("Deep learning rejects an empty batch", True, str(exc))
+            predict_ktas(model, pre, sample.iloc[0:0])
+            c.report(False, "Reject empty batch", "accepted empty input")
+        except (ValueError, TypeError):
+            c.report(True, "Reject empty batch")
         except Exception as exc:
-            report(
-                "Deep learning rejects an empty batch",
-                False,
-                f"unexpected exception: {type(exc).__name__}: {exc}",
-            )
+            c.report(False, "Reject empty batch", str(exc))
+        bar.update(1)
 
-    except Exception as exc:
-        report("Run deep-learning prediction checks", False, f"{type(exc).__name__}: {exc}")
+    return c.summary()
 
-    print(f"\nDeep Learning checks: {passed} passed, {failed} failed.")
-    return failed == 0
 
+# ================================================================
+# MAIN
+# ================================================================
 
 def main():
-    """Here I run integration checks for saved components without retraining."""
-    print_heading("PREDICT-CARE AI — APPLICATION STARTUP")
-    print(f"Project directory: {PROJECT_DIR}")
-    print(f"Python interpreter: {sys.executable}")
-    print("Startup mode: load existing artifacts and test; do not retrain models.")
+    print_heading("PREDICT-CARE AI — STARTUP")
+    tqdm.write(f"Project: {PROJECT_DIR}")
+    tqdm.write(f"Python:  {sys.executable}")
 
-    file_statuses = check_files()
-    ml_ok = run_traditional_ml_checks()
+    check_files()
+    ml_ok  = run_traditional_ml_checks()
     nlp_ok = run_nlp_checks()
-    deep_learning_ok = run_deep_learning_checks()
+    dl_ok  = run_deep_learning_checks()
 
-    print_heading("STARTUP SUMMARY")
-    print(f"Traditional ML integration checks: {'PASSED' if ml_ok else 'NEEDS ATTENTION'}")
-    print(f"NLP integration checks:             {'PASSED' if nlp_ok else 'NEEDS ATTENTION'}")
-    print(
-        "Deep Learning integration checks: "
-        f"{'PASSED' if deep_learning_ok else 'NEEDS ATTENTION'}"
-    )
-    print("No model training was started by Main.py.")
-    print("File presence and successful inference do not establish clinical validity.")
-    print("Prototype only: predictions are not clinical diagnoses or treatment instructions.")
+    print_heading("SUMMARY")
+    tqdm.write(f"Traditional ML : {tag(ml_ok)}")
+    tqdm.write(f"NLP            : {tag(nlp_ok)}")
+    tqdm.write(f"Deep Learning  : {tag(dl_ok)}")
+    tqdm.write("No training started. Prototype only — not clinical advice.")
 
-    return 0 if ml_ok and nlp_ok and deep_learning_ok else 1
+    return 0 if ml_ok and nlp_ok and dl_ok else 1
 
 
 if __name__ == "__main__":
