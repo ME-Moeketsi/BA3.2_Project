@@ -13,32 +13,6 @@
        width="150">
 </div>
 
----
-
-## Run the connected desktop GUI
-
-The Tkinter GUI now calls the project's saved **complaint-text NLP KTAS model**
-plus **doctor-wait and total-time regressors** and uses the local waiting-time
-NLP intent parser. Trained artifacts are included in the updated ZIP.
-
-```powershell
-python -m pip install -r requirements.txt
-python GUI/GUI.py
-```
-
-Enter the chief complaint, and (for waiting times) simulated arrival minutes,
-number of doctors, peak-arrival status, and a natural-language question.
-Click **Calculate predictions**. See [GUI setup and warnings](GUI/README.md)
-for detailed instructions, optional voice setup, retraining, and restrictions.
-
-**Safety:** Academic prototype only; the displayed KTAS is a complaint-only
-prediction, **not** a real patient risk diagnosis or formal clinical triage.
-Hospital times come from simulation data and are not real-world queue estimates.
-The original deep-learning weights are not used by this GUI because the
-corresponding fitted preprocessor was not provided in the original project.
-
----
-
 ### AI-Driven Patient Management & Healthcare Operations Decision Support System
 
 Predict-Care AI is an AI-driven healthcare system designed to support patient management, triage analysis, patient flow, and hospital operational decision-making.
