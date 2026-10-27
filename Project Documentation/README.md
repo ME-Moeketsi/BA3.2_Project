@@ -4,7 +4,7 @@ This is where theoritical part of our project will be stored either in PDF or Wo
 
 </div>
 <div align="center">
-  <img src="Project%20Documentation/Poster.jpg"
-       alt="Predict-Care AI Icon"
+  <img src="Poster.jpg"
+       alt="Poster"
        width="150">
 </div>
