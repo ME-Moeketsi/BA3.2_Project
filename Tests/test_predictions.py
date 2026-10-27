@@ -2,34 +2,15 @@
 Predict-Care AI
 Integrated Prediction Test
 
-Here I am testing the main Predict-Care AI prediction
-components together using information entered at runtime.
-
-The categorical options are loaded directly from the
-KTAS dataset so that I do not have to hardcode medical
-or dataset-specific category values.
-
-This test checks:
-1. Traditional Machine Learning KTAS prediction
-2. NLP KTAS prediction
-3. Deep Learning KTAS prediction
-4. KTAS to operational priority mapping
-5. Peak / non-peak detection
-6. Patient-flow doctor waiting-time prediction
+Same logic as the GUI's pipeline, but driven from the terminal.
 """
 
 import os
 import sys
-from datetime import datetime
 
-import joblib
 import numpy as np
 import pandas as pd
 
-
-# ============================================================
-# PROJECT PATH
-# ============================================================
 
 PROJECT_DIR = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -39,34 +20,25 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 
-# ============================================================
-# IMPORT PROJECT COMPONENTS
-# ============================================================
-
 from healthcare_ai import (
     load_triage_model,
     load_patient_flow_model,
 )
 
-from old.nlp_pipeline import predict_ktas as predict_nlp_ktas
+from NLP.pipeline import predict_ktas_proba as predict_nlp_proba
 
 from deep_learning import (
     load_deep_learning_model,
     predict_ktas as predict_deep_learning_ktas,
 )
 
+from GUI import gui_logic as logic
 
-# ============================================================
-# PROJECT DATA PATHS (case-insensitive folder resolution)
-# ============================================================
+
+MODEL_WEIGHTS = logic.MODEL_WEIGHTS
+
 
 def _resolve_data_dir():
-    """
-    Here I look for the project's data folder regardless of whether
-    the folder is named 'data' or 'Data'. healthcare_ai.py uses
-    'data' while other parts of the project use 'Data', so I make
-    sure both work.
-    """
     for candidate in ("Data", "data"):
         candidate_path = os.path.join(PROJECT_DIR, candidate)
         if os.path.isdir(candidate_path):
@@ -75,711 +47,381 @@ def _resolve_data_dir():
 
 
 DATA_DIR = _resolve_data_dir()
-
 TRIAGE_DATASET = os.path.join(DATA_DIR, "ktas_cleaned.csv")
 PATIENT_FLOW_DATASET = os.path.join(DATA_DIR, "patient_flow_cleaned.csv")
 
 
-# ============================================================
-# DATASET LOADING
-# ============================================================
-
 def load_ktas_options():
-    """
-    Here I am loading the KTAS dataset so that the
-    categorical input menus use the actual values found
-    in the training data.
-    """
-
     if not os.path.exists(TRIAGE_DATASET):
         raise FileNotFoundError(
             "KTAS dataset not found: " + TRIAGE_DATASET
         )
-
     data = pd.read_csv(TRIAGE_DATASET)
-
-    required_columns = [
-        "Arrival mode",
-        "Injury",
-        "Mental",
-        "Pain",
-    ]
-
-    missing_columns = [
-        column
-        for column in required_columns
-        if column not in data.columns
-    ]
-
-    if missing_columns:
-        raise ValueError(
-            "Missing categorical columns: "
-            + ", ".join(missing_columns)
-        )
-
+    required = ["Arrival mode", "Injury", "Mental", "Pain"]
+    missing = [c for c in required if c not in data.columns]
+    if missing:
+        raise ValueError("Missing categorical columns: " + ", ".join(missing))
     options = {}
-
-    for column in required_columns:
-        values = (
-            data[column]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
-        values = sorted(values.unique())
-        options[column] = values
-
+    for column in required:
+        values = data[column].dropna().astype(str).str.strip().unique()
+        options[column] = sorted(values)
     return options
 
 
-# ============================================================
-# MENU INPUT
-# ============================================================
-
-def select_from_menu(title, options):
-    """
-    Here I am displaying numbered options so the user
-    can select a value without having to type the
-    dataset value manually.
-    """
-
+def select_from_menu(title, options, column_name=None):
     print("\n")
     print("============================================")
     print(title)
     print("============================================")
-
     for index, option in enumerate(options, start=1):
-        print(f"{index}. {option}")
-
+        if column_name:
+            print(str(index) + ". "
+                  + logic.display_options_for(column_name, [option])[0])
+        else:
+            print(str(index) + ". " + str(option))
     while True:
         try:
             selection = int(input("\nSelect an option: "))
-
             if 1 <= selection <= len(options):
                 return options[selection - 1]
-
-            print(
-                f"Please select a number "
-                f"between 1 and {len(options)}."
-            )
-
+            print("Please select a number between 1 and "
+                  + str(len(options)) + ".")
         except ValueError:
             print("Please enter the number of one of the options.")
 
 
-# ============================================================
-# INTEGER INPUT
-# ============================================================
-
 def get_integer_input(prompt, minimum=None, maximum=None):
-    """
-    Here I am collecting an integer and checking
-    that it is within the required range.
-    """
-
     while True:
         try:
             value = int(input(prompt))
-
             if minimum is not None and value < minimum:
-                print(f"Please enter a value of at least {minimum}.")
+                print("Please enter a value of at least "
+                      + str(minimum) + ".")
                 continue
-
             if maximum is not None and value > maximum:
-                print(f"Please enter a value no greater than {maximum}.")
+                print("Please enter a value no greater than "
+                      + str(maximum) + ".")
                 continue
-
             return value
-
         except ValueError:
             print("Please enter a valid whole number.")
 
 
-# ============================================================
-# FLOAT INPUT
-# ============================================================
-
 def get_float_input(prompt, minimum=None, maximum=None):
-    """
-    Here I am collecting a numerical value and
-    checking that it is within the required range.
-    """
-
     while True:
         try:
             value = float(input(prompt))
-
             if minimum is not None and value < minimum:
-                print(f"Please enter a value of at least {minimum}.")
+                print("Please enter a value of at least "
+                      + str(minimum) + ".")
                 continue
-
             if maximum is not None and value > maximum:
-                print(f"Please enter a value no greater than {maximum}.")
+                print("Please enter a value no greater than "
+                      + str(maximum) + ".")
                 continue
-
             return value
-
         except ValueError:
             print("Please enter a valid number.")
 
 
-# ============================================================
-# TEXT INPUT
-# ============================================================
-
 def get_text_input(prompt):
-    """Here I am collecting required text input."""
-
     while True:
         value = input(prompt).strip()
-
         if value:
             return value
-
         print("This field cannot be empty.")
 
 
-# ============================================================
-# PATIENT INPUT
-# ============================================================
-
 def collect_patient_data(options):
-    """
-    Here I am collecting the patient's clinical
-    information using guided menus and numerical inputs.
-    """
-
     print("\n")
     print("############################################")
-    print("#")
     print("#       PATIENT CLINICAL INFORMATION")
-    print("#")
     print("############################################")
 
     patient_data = {}
 
     print("\nGROUP")
-    print("Enter the code used by the training dataset (1 or 2).")
     patient_data["Group"] = get_integer_input(
-        "Group code: ",
-        minimum=1,
-        maximum=2,
+        "Group code (1-2): ", minimum=1, maximum=2
     )
 
     print("\nSEX")
-    print("Enter the code used by the training dataset (1 or 2).")
     patient_data["Sex"] = get_integer_input(
-        "Sex code: ",
-        minimum=1,
-        maximum=2,
+        "Sex code (1-2): ", minimum=1, maximum=2
     )
 
     print("\nPATIENT FLOW")
     patient_data["Patients number per hour"] = get_integer_input(
-        "Number of patients arriving per hour: ",
-        minimum=1,
+        "Number of patients arriving per hour: ", minimum=1
     )
 
     patient_data["Age"] = get_integer_input(
-        "\nAge: ",
-        minimum=0,
-        maximum=120,
+        "\nAge: ", minimum=0, maximum=120
     )
 
     patient_data["Arrival mode"] = select_from_menu(
-        "ARRIVAL MODE", options["Arrival mode"]
+        "ARRIVAL MODE", options["Arrival mode"],
+        column_name="Arrival mode",
     )
     patient_data["Injury"] = select_from_menu(
-        "INJURY", options["Injury"]
+        "INJURY", options["Injury"], column_name="Injury"
     )
     patient_data["Mental"] = select_from_menu(
-        "MENTAL STATUS", options["Mental"]
+        "MENTAL STATUS", options["Mental"], column_name="Mental"
     )
     patient_data["Pain"] = select_from_menu(
-        "PAIN", options["Pain"]
+        "PAIN", options["Pain"], column_name="Pain"
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("PAIN SCORE")
     print("============================================")
-    print("Enter the patient's pain level from 0 to 10.")
-
     patient_data["NRS_pain"] = get_float_input(
-        "Pain level (0-10): ",
-        minimum=0,
-        maximum=10,
+        "Pain level (0-10): ", minimum=0, maximum=10
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("BLOOD PRESSURE")
     print("============================================")
+    patient_data["SBP"] = get_float_input("Systolic BP (SBP): ", minimum=0)
+    patient_data["DBP"] = get_float_input("Diastolic BP (DBP): ", minimum=0)
 
-    patient_data["SBP"] = get_float_input(
-        "Systolic BP (SBP): ", minimum=0
-    )
-    patient_data["DBP"] = get_float_input(
-        "Diastolic BP (DBP): ", minimum=0
-    )
-
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("HEART RATE")
     print("============================================")
-
     patient_data["HR"] = get_float_input(
-        "Heart rate (beats per minute): ", minimum=0
+        "Heart rate: ", minimum=0
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("RESPIRATORY RATE")
     print("============================================")
-
     patient_data["RR"] = get_float_input(
-        "Respiratory rate (breaths per minute): ", minimum=0
+        "Respiratory rate: ", minimum=0
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("BODY TEMPERATURE")
     print("============================================")
-
     patient_data["BT"] = get_float_input(
-        "Body temperature (°C): ", minimum=0
+        "Body temperature (C): ", minimum=0
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("OXYGEN SATURATION")
     print("============================================")
-
     patient_data["Saturation"] = get_float_input(
         "Oxygen saturation (%): ", minimum=0, maximum=100
     )
 
-    print("\n")
-    print("============================================")
+    print("\n============================================")
     print("CHIEF COMPLAINT")
     print("============================================")
-    print("Describe the main reason for the patient's visit.")
-
-    patient_data["Chief_complain"] = get_text_input(
-        "Chief complaint: "
-    )
+    patient_data["Chief_complain"] = get_text_input("Chief complaint: ")
 
     return patient_data
 
 
-# ============================================================
-# TRADITIONAL ML PREDICTION
-# ============================================================
+def collect_operational_information():
+    print("\n")
+    print("############################################")
+    print("#       OPERATIONAL INFORMATION")
+    print("############################################")
+
+    doctors = select_from_menu(
+        "NUMBER OF AVAILABLE DOCTORS",
+        ["1 doctor", "2 doctors", "3 doctors", "4 doctors"],
+    )
+    num_doctors = int(doctors.split()[0])
+
+    peak = select_from_menu(
+        "PEAK DURATION",
+        ["120 minutes", "240 minutes", "360 minutes"],
+    )
+    peak_limit = int(peak.split()[0])
+
+    print("\n============================================")
+    print("FORECAST HORIZON")
+    print("============================================")
+    horizon = get_integer_input(
+        "Hours to forecast (1-12): ", minimum=1, maximum=12
+    )
+
+    return num_doctors, peak_limit, horizon
+
 
 def run_traditional_prediction(patient_data):
-    """Here I preprocess the complete patient record before predicting KTAS."""
+    pkg = load_triage_model()
+    model = pkg["model"]
+    pre = pkg.get("preprocessor", pkg["scaler"])
+    feat_cols = pkg["feature_columns"]
 
-    package = load_triage_model()
-    model = package["model"]
-    preprocessor = package.get("preprocessor", package["scaler"])
-    feature_columns = package["feature_columns"]
-
-    missing_features = [
-        column for column in feature_columns
-        if column not in patient_data
-    ]
-
-    if missing_features:
+    missing = [c for c in feat_cols if c not in patient_data]
+    if missing:
         raise ValueError(
-            "The triage form is missing required features: "
-            + ", ".join(missing_features)
-            + ". Complete the form before running the prediction."
+            "Missing triage features: " + ", ".join(missing)
         )
 
-    patient_df = pd.DataFrame(
-        [{column: patient_data[column] for column in feature_columns}]
-    )
+    df = pd.DataFrame([{c: patient_data[c] for c in feat_cols}])
+    X = pre.transform(df)
+    label = int(model.predict(X)[0])
 
-    transformed_patient = preprocessor.transform(patient_df)
+    if hasattr(model, "predict_proba"):
+        raw = np.asarray(model.predict_proba(X)[0], dtype=float)
+        classes = list(getattr(model, "classes_", [1, 2, 3, 4, 5]))
+        aligned = np.zeros(5, dtype=float)
+        for cls, prob in zip(classes, raw):
+            idx = int(cls) - 1
+            if 0 <= idx < 5:
+                aligned[idx] = prob
+        total = aligned.sum()
+        if total > 0:
+            aligned = aligned / total
+        probs = aligned
+    else:
+        probs = np.zeros(5, dtype=float)
+        if 1 <= label <= 5:
+            probs[label - 1] = 1.0
 
-    prediction = model.predict(transformed_patient)
+    return label, probs
 
-    return int(prediction[0])
-
-
-# ============================================================
-# NLP PREDICTION
-# ============================================================
 
 def run_nlp_prediction(chief_complaint):
-    """
-    Here I am using the NLP model to predict KTAS
-    from the patient's chief complaint.
-    """
+    label, probs = predict_nlp_proba(chief_complaint)
+    return int(label), np.asarray(probs, dtype=float)
 
-    return predict_nlp_ktas(chief_complaint)
-
-
-# ============================================================
-# DEEP LEARNING PREDICTION
-# ============================================================
 
 def run_deep_learning_prediction(patient_data):
-    """
-    Here I am using the saved neural network to predict the
-    patient's KTAS level.
-
-    predict_ktas() in deep_learning.py applies the saved
-    preprocessor internally, so I pass the raw patient record
-    and let the module handle encoding and scaling.
-    """
-
-    model, preprocessor, feature_names = load_deep_learning_model()
-
-    prediction, probabilities = predict_deep_learning_ktas(
-        model,
-        preprocessor,
-        patient_data,
-    )
-
-    predicted_ktas = int(prediction[0])
-
-    return predicted_ktas, probabilities[0]
-
-
-# ============================================================
-# KTAS -> OPERATIONAL PRIORITY
-# ============================================================
-
-def map_ktas_to_priority(ktas):
-    """
-    Here I am applying the Predict-Care integration
-    rule between KTAS and the operational priority used
-    by the patient-flow simulation.
-
-    KTAS 1 and 2 -> HIGH
-    KTAS 3       -> MEDIUM
-    KTAS 4 and 5 -> LOW
-    """
-
-    if ktas in [1, 2]:
-        return 3, "HIGH"
-
-    if ktas == 3:
-        return 2, "MEDIUM"
-
-    return 1, "LOW"
-
-
-# ============================================================
-# PEAK STATUS
-# ============================================================
-
-def determine_current_peak_status():
-    """
-    Here I am using the historical patient-flow dataset
-    to determine whether the current scenario represents
-    a peak or non-peak period.
-
-    The dataset has no wall-clock DateTime column, so peak
-    status is derived from the Scenario label and the
-    average IsPeakArrival rate.
-    """
-
-    if not os.path.exists(PATIENT_FLOW_DATASET):
-        raise FileNotFoundError(
-            "Patient-flow dataset not found: "
-            + PATIENT_FLOW_DATASET
-        )
-
-    data = pd.read_csv(PATIENT_FLOW_DATASET)
-
-    required_columns = ["Scenario", "IsPeakArrival"]
-    missing = [
-        column for column in required_columns
-        if column not in data.columns
-    ]
-    if missing:
-        raise ValueError(
-            "Patient-flow dataset is missing required columns: "
-            + ", ".join(missing)
-        )
-
-    data = data.dropna(subset=["Scenario", "IsPeakArrival"])
-
-    if data.empty:
-        return 0, "NON-PEAK"
-
-    most_common_scenario = (
-        data["Scenario"]
-        .astype(str)
-        .value_counts()
-        .idxmax()
-    )
-
-    scenario_lower = most_common_scenario.lower()
-    peak_keywords = ("peak", "120", "360")
-    scenario_says_peak = any(
-        keyword in scenario_lower for keyword in peak_keywords
-    )
-
-    average_peak_rate = float(
-        pd.to_numeric(
-            data["IsPeakArrival"], errors="coerce"
-        ).fillna(0).mean()
-    )
-
-    is_peak = int(scenario_says_peak or average_peak_rate >= 0.5)
-
-    if is_peak:
-        return 1, "PEAK"
-    return 0, "NON-PEAK"
-
-
-# ============================================================
-# OPERATIONAL INPUT
-# ============================================================
-
-def collect_operational_information():
-    """
-    Here I am collecting the information needed by
-    the patient-flow model.
-    """
-
-    print("\n")
-    print("############################################")
-    print("#")
-    print("#       OPERATIONAL INFORMATION")
-    print("#")
-    print("############################################")
-
-    number_of_doctors = select_from_menu(
-        "NUMBER OF AVAILABLE DOCTORS",
-        [
-            "1 doctor",
-            "2 doctors",
-            "3 doctors",
-            "4 doctors",
-        ],
-    )
-    number_of_doctors = int(number_of_doctors.split()[0])
-
-    peak_limit_option = select_from_menu(
-        "PEAK DURATION",
-        [
-            "120 minutes",
-            "240 minutes",
-            "360 minutes",
-        ],
-    )
-    peak_limit = int(peak_limit_option.split()[0])
-
-    return number_of_doctors, peak_limit
-
-
-# ============================================================
-# PATIENT FLOW PREDICTION
-# ============================================================
-
-def run_patient_flow_prediction(
-    priority_level,
-    is_peak,
-    number_of_doctors,
-    peak_limit,
-):
-    """
-    Here I am using the saved patient-flow model to predict
-    the doctor's waiting time.
-
-    The saved model was trained on these six features, in this
-    exact order:
-
-        Priority, IsPeakArrival, NumDoctors, PeakLimit,
-        ArrivalTime, Scenario
-
-    The preprocessor that ships with the model scales the five
-    numerical features and one-hot encodes the Scenario
-    categorical feature. I therefore pass the raw values and
-    let the saved preprocessor perform the transformation.
-    """
-
-    package = load_patient_flow_model()
-
-    model = package["model"]
-    preprocessor = package.get("preprocessor", package.get("scaler"))
-    feature_columns = list(package["feature_columns"])
-    numerical_columns = list(package.get("numerical_features", []))
-    categorical_columns = list(package.get("categorical_features", []))
-
-    # Here I map the KTAS-derived priority code (1, 2, 3) to
-    # the numeric Priority column used by the flow dataset.
-    priority_numeric = int(priority_level)
-
-    # Here I pick a Scenario label that exists in the training
-    # data. The training pipeline validates Scenario values
-    # against a known set, so I use one of the supported labels.
-    if is_peak and peak_limit == 120:
-        scenario = "Peak_120Min"
-    elif is_peak and peak_limit == 360:
-        scenario = "Peak_360Min"
-    elif is_peak:
-        scenario = "Baseline_2Doc_240Peak"
+    model, pre, _ = load_deep_learning_model()
+    pred, probs = predict_deep_learning_ktas(model, pre, patient_data)
+    label = int(pred[0])
+    flat = np.asarray(probs, dtype=float).reshape(-1)
+    if flat.shape == (5,):
+        aligned = flat
     else:
-        scenario = "Baseline_2Doc_240Peak"
+        aligned = np.zeros(5, dtype=float)
+        if 1 <= label <= 5:
+            aligned[label - 1] = 1.0
+    total = aligned.sum()
+    if total > 0:
+        aligned = aligned / total
+    return label, aligned
 
-    # Here I synthesise a plausible ArrivalTime. The dataset
-    # stores ArrivalTime as minutes into the simulation run, not
-    # as a wall clock. I place this patient at the midpoint of
-    # the peak window so the model sees a representative value.
-    arrival_time = max(0, int(peak_limit) // 2)
 
-    record = {
-        "Priority": priority_numeric,
-        "IsPeakArrival": int(is_peak),
-        "NumDoctors": int(number_of_doctors),
-        "PeakLimit": int(peak_limit),
-        "ArrivalTime": arrival_time,
-        "Scenario": scenario,
-    }
-
-    missing = [
-        column for column in feature_columns
-        if column not in record
-    ]
-    if missing:
-        raise ValueError(
-            "Patient-flow input is missing expected features: "
-            + ", ".join(missing)
-        )
-
-    input_df = pd.DataFrame(
-        [{column: record[column] for column in feature_columns}]
+def combine_weighted(trad_label, trad_probs,
+                     nlp_label, nlp_probs,
+                     dl_label, dl_probs):
+    return logic.combine_weighted(
+        trad_label, trad_probs,
+        nlp_label, nlp_probs,
+        dl_label, dl_probs,
     )
 
-    transformed_input = preprocessor.transform(input_df)
-    predicted_wait = model.predict(transformed_input)
-
-    return float(predicted_wait[0])
-
-
-# ============================================================
-# MAIN
-# ============================================================
 
 def main():
-
     print("\n")
     print("############################################")
-    print("#")
     print("#          PREDICT-CARE AI")
     print("#       INTEGRATED PREDICTION TEST")
-    print("#")
     print("############################################")
-
-    print("\nHere I am loading the available patient")
-    print("input options directly from the KTAS dataset.")
 
     options = load_ktas_options()
-
     patient_data = collect_patient_data(options)
+    num_doctors, peak_limit, horizon = collect_operational_information()
 
-    (
-        number_of_doctors,
-        peak_limit,
-    ) = collect_operational_information()
-
-    print("\n")
-    print("Running Traditional Machine Learning...")
-
-    traditional_ktas = run_traditional_prediction(patient_data)
+    print("\nRunning Traditional Machine Learning...")
+    trad_ktas, trad_probs = run_traditional_prediction(patient_data)
 
     print("Running Natural Language Processing...")
-
-    nlp_result = run_nlp_prediction(
+    nlp_ktas, nlp_probs = run_nlp_prediction(
         patient_data["Chief_complain"]
     )
-    nlp_ktas = int(nlp_result["predicted_ktas"])
 
     print("Running Deep Learning...")
+    dl_ktas, dl_probs = run_deep_learning_prediction(patient_data)
 
-    (
-        deep_learning_ktas,
-        probabilities,
-    ) = run_deep_learning_prediction(patient_data)
+    print("Combining model predictions (weighted soft vote)...")
+    combined_ktas, combined_conf, breakdown = combine_weighted(
+        trad_ktas, trad_probs, nlp_ktas, nlp_probs, dl_ktas, dl_probs
+    )
 
-    (
-        priority_level,
-        priority_name,
-    ) = map_ktas_to_priority(traditional_ktas)
+    priority_code, priority_name = logic.map_ktas_to_priority(combined_ktas)
 
-    print("Checking the current patient-flow period...")
+    print("Checking current patient-flow period...")
+    is_peak, peak_status = logic.determine_current_peak_status()
 
-    (
-        is_peak,
-        peak_status,
-    ) = determine_current_peak_status()
+    print("Selecting scenario from staffing and peak settings...")
+    scenario = logic.scenario_from_inputs(num_doctors, peak_limit, is_peak)
 
     print("Predicting doctor waiting time...")
+    predicted_wait = logic.run_patient_flow_prediction(
+        priority_code, is_peak, num_doctors, peak_limit, scenario
+    )
 
-    predicted_wait = run_patient_flow_prediction(
-        priority_level,
-        is_peak,
-        number_of_doctors,
-        peak_limit,
+    print("Running time-series demand forecast...")
+    ts = logic.run_time_series_forecast(scenario, horizon_hours=horizon)
+
+    print("Running consistency check...")
+    cons = logic.check_consistency(
+        scenario,
+        predicted_wait,
+        ts["mean"] if ts.get("available") else None,
+        num_doctors,
     )
 
     print("\n")
     print("############################################")
-    print("#")
     print("#          PREDICT-CARE AI RESULTS")
-    print("#")
     print("############################################")
 
-    print(f"\nTraditional ML KTAS:       {traditional_ktas}")
-    print(f"NLP KTAS:                  {nlp_ktas}")
-    print(f"Deep Learning KTAS:        {deep_learning_ktas}")
+    print("\nTraditional ML KTAS:       " + str(trad_ktas))
+    print("NLP KTAS:                  " + str(nlp_ktas))
+    print("Deep Learning KTAS:        " + str(dl_ktas))
+    print("Combined KTAS:             " + str(combined_ktas))
+    print("Confidence:                "
+          + format(combined_conf * 100, ".1f") + "%")
 
-    print(
-        f"\nNLP Emergency Category:    "
-        f"{nlp_result['emergency_category']}"
-    )
+    print("\nNLP Emergency Category:    "
+          + ("Emergency" if nlp_ktas <= 3 else "Non-Emergency"))
 
-    print(f"\nOperational Priority:      {priority_name}")
-    print(f"Operational Priority Code: {priority_level}")
-    print(f"Current Period:            {peak_status}")
-    print(f"Available Doctors:         {number_of_doctors}")
-    print(f"Peak Duration:             {peak_limit} minutes")
-    print(f"\nPredicted Doctor Wait:     {predicted_wait:.2f} minutes")
+    print("\nOperational Priority:      " + priority_name)
+    print("Operational Priority Code: " + str(priority_code))
+    print("Scenario Used:             " + scenario)
+    print("Current Period:            " + peak_status)
+    print("Available Doctors:         " + str(num_doctors))
+    print("Peak Duration:             " + str(peak_limit) + " minutes")
+    print("Predicted Doctor Wait:     "
+          + format(predicted_wait, ".2f") + " minutes")
 
-    print("\n")
+    print("\n============================================")
+    print("DEMAND FORECAST (TIME-SERIES)")
     print("============================================")
-    print("MODEL COMPARISON")
-    print("============================================")
-
-    print(f"Traditional ML:  KTAS {traditional_ktas}")
-    print(f"NLP:             KTAS {nlp_ktas}")
-    print(f"Deep Learning:   KTAS {deep_learning_ktas}")
-
-    if (
-        traditional_ktas
-        == nlp_ktas
-        == deep_learning_ktas
-    ):
-        print("\nAll three models produced the same KTAS level.")
+    if ts.get("available"):
+        print("Model:                     " + str(ts["model"]))
+        print("Horizon:                   "
+              + str(ts["horizon"]) + " hours")
+        for i, val in enumerate(ts["forecast"], start=1):
+            print("  Hour +" + str(i) + ": "
+                  + format(val, ".0f") + " patients")
+        print("Average:                   "
+              + format(ts["mean"], ".0f") + " patients/hour")
     else:
-        print("\nThe models produced different KTAS levels.")
-        print("The predictions are being displayed separately.")
-        print("They are not being artificially averaged.")
+        print("Forecast unavailable:      " + ts.get("message", ""))
 
-    print("\n")
+    print("\n============================================")
+    print("CONSISTENCY CHECK")
     print("============================================")
+    if cons.get("suspicious"):
+        for msg in cons["messages"]:
+            print("[!] " + msg)
+    else:
+        print("No contradiction detected between forecast,")
+        print("staffing and predicted wait.")
+
+    print("\n============================================")
     print("END OF PREDICT-CARE TEST")
     print("============================================")
 
-
-# ============================================================
-# PROGRAM ENTRY POINT
-# ============================================================
 
 if __name__ == "__main__":
     main()

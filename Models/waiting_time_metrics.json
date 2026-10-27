@@ -19,5 +19,9 @@
       "mae_minutes": 27.35,
       "r2": 0.979
     }
+  },
+  "defaults": {
+    "NumDoctors": 2,
+    "IsPeakArrival": 0
   }
 }

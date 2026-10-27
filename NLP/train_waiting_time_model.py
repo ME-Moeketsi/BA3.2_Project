@@ -15,13 +15,16 @@ processes:
 
 Two RandomForestRegressors are trained, evaluated on a held-out
 split, and saved together in Models/waiting_time_model.pkl.
+
+The bundle also stores the most common staffing level and peak
+value from the training data, so the chat engine can state those
+as explicit assumptions instead of inventing them.
 """
 
 from pathlib import Path
 import json
 
 import joblib
-import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import RandomForestRegressor
@@ -138,6 +141,11 @@ def main():
     print("PREDICT-CARE AI - WAITING-TIME MODEL TRAINING")
     print("=============================================")
 
+    # Here I am making sure the Models/ directory exists before any
+    # file is written, so a later write failure cannot leave the
+    # project in a half-built state.
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
     df = load_waiting_time_data()
 
     X = df[FEATURE_COLUMNS]
@@ -168,18 +176,28 @@ def main():
         X_train, X_test, y_total_train, y_total_test, "TotalTimeInHospital"
     )
 
+    # Here I am recording the most common staffing and peak values so
+    # the chat engine can state its defaults honestly instead of
+    # inventing them.
+    default_num_doctors = int(df["NumDoctors"].mode().iloc[0])
+    default_is_peak = int(df["IsPeakArrival"].mode().iloc[0])
+
+    print(f"\nDefault NumDoctors    = {default_num_doctors} (mode of training data)")
+    print(f"Default IsPeakArrival = {default_is_peak} (mode of training data)")
+
     # Here I am saving both regressors together so the pipeline only
-    # loads one file at startup.
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(
-        {
-            "doctor_model": doctor_model,
-            "total_model": total_model,
-            "feature_columns": FEATURE_COLUMNS,
+    # loads one file at startup. The bundle also carries the feature
+    # order and the default slot values for the chat engine.
+    bundle = {
+        "doctor_model": doctor_model,
+        "total_model": total_model,
+        "feature_columns": FEATURE_COLUMNS,
+        "defaults": {
+            "NumDoctors": default_num_doctors,
+            "IsPeakArrival": default_is_peak,
         },
-        MODEL_PATH,
-        compress=3,
-    )
+    }
+    joblib.dump(bundle, MODEL_PATH)
 
     # Here I am saving the metrics so they can be quoted in the report
     # without re-running training.
@@ -193,6 +211,10 @@ def main():
         "targets": {
             "DocWaitTime": doctor_metrics,
             "TotalTimeInHospital": total_metrics,
+        },
+        "defaults": {
+            "NumDoctors": default_num_doctors,
+            "IsPeakArrival": default_is_peak,
         },
     }
     METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
