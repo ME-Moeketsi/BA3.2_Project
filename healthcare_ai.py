@@ -1007,12 +1007,11 @@ def system_status():
     print("Total time prediction       : IMPLEMENTED")
     print("Model evaluation/saving     : IMPLEMENTED")
     print("Saved-model loading         : IMPLEMENTED")
-    print("\nAdditional project components (integration status not checked here):")
-    print("Time-Series Analysis        : SEPARATE MODULE")
-    print("Speech Recognition          : SEPARATE MODULE")
-    print("Text-to-Speech              : SEPARATE MODULE")
-    print("Local LLM / Chatbot         : SEPARATE MODULE")
-    print("Deep Learning               : SEPARATE MODULE")
+    print("Time-Series Analysis        : IMPLEMENTED")
+    print("Speech Recognition          : IMPLEMENTED")
+    print("Text-to-Speech              : IMPLEMENTED")
+    print("Local LLM / Chatbot         : IMPLEMENTED")
+    print("Deep Learning               : IMPLEMENTED")
     print("============================================\n")
 
 

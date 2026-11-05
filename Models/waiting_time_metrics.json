@@ -1,5 +1,5 @@
 {
-  "dataset": "Data/patient_flow_cleaned.csv",
+  "dataset": "Data\\patient_flow_cleaned.csv",
   "rows_total": 60000,
   "rows_train": 48000,
   "rows_test": 12000,

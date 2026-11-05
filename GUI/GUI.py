@@ -1,32 +1,29 @@
 """
-GUI.py
+gui.py
 
-Tkinter user interface for the AI Triage Estimation tool.
+Flet user interface for the AI Triage Estimation tool.
 
-This file contains NO model code. All prediction and
-dictation logic lives in gui_logic.py.
-
-Keyboard:
-    Enter        Submit the form
-    Space        Start / stop voice dictation
-    Ctrl+C       Quit safely
-
-Run via GUI_Pipeline.run_gui(), or directly with:
-    python GUI.py
+Run with:
+    flet run gui/gui.py
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-import signal
-import threading
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+import os
+# Force the working directory to the project root (parent of the GUI folder)
+# This ensures Models/triage_model.pkl is always found regardless of where flet is run from.
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import asyncio
+import flet as ft
 
 import gui_logic
-
+import gui_speech_logic as speech_logic
 
 # ==================================================
 # COLORS
 # ==================================================
-
 BG = "#F1F5F9"
 WHITE = "#FFFFFF"
 PRIMARY = "#6366F1"
@@ -34,650 +31,356 @@ PRIMARY_DARK = "#4F46E5"
 TEXT = "#1E293B"
 MUTED = "#64748B"
 BORDER = "#DCE4F0"
-VOICE_ACTIVE = "#EF4444"   # red while listening
-VOICE_IDLE = "#10B981"     # green when ready
-
-MIN_CARD_WIDTH = 300
-
+VOICE_ACTIVE = "#EF4444"
+VOICE_IDLE = "#10B981"
 
 # ==================================================
 # MAIN ENTRY
 # ==================================================
 
-def create_window():
-    """
-    Build and return the main Tk window. GUI_Pipeline.run_gui()
-    calls this and then runs root.mainloop().
-    """
-    root = tk.Tk()
-    root.title("AI Triage Estimation")
-    root.geometry("1200x780")
-    root.minsize(700, 500)
-    root.configure(bg=BG)
-    root.resizable(True, True)
+def main(page: ft.Page):
+    page.title = "AI Triage Estimation"
+    page.bgcolor = BG
+    page.window.width = 1300
+    page.window.height = 900
+    page.window.min_width = 1000
+    page.window.min_height = 700
+    page.padding = 16
+    page.theme_mode = ft.ThemeMode.LIGHT
 
-    # Shared state
     inputs = {}
-    container_cards = []
 
-    # Right panel first so its widgets exist.
-    right = _build_right_panel(root, inputs)
-    output_text = right["output_text"]
-    voice_status = right["voice_status"]
-    submit_button = right["submit_button"]
-
-    # Left scrollable form
-    form = _build_form_panel(root, inputs, container_cards)
-    canvas = form["canvas"]
-    scroll_frame = form["scroll_frame"]
-
-    # ---- Submit handler ----
-    def submit_action():
-        _on_submit(inputs, output_text, submit_button)
-
-    submit_button.configure(command=submit_action)
-
-    # ---- Space / Enter bindings ----
-    def on_space(event):
-        # Do not trigger Space while typing in a Text or Entry.
-        focused = root.focus_get()
-        if isinstance(focused, (tk.Entry, tk.Text, ttk.Entry, ttk.Combobox)):
-            # Only intercept when the widget is the Chief Complaint box
-            # to allow a shortcut while still permitting normal typing
-            # in other widgets.
-            if focused is inputs.get("Chief_complain"):
-                return None
-            return None
-        _toggle_dictation(root, inputs, voice_status)
-        return "break"
-
-    def on_enter(event):
-        submit_action()
-        return "break"
-
-    root.bind("<space>", on_space)
-    root.bind("<Return>", on_enter)
-
-    # ---- Responsive layout ----
-    def arrange_containers(available_width):
-        if not container_cards:
-            return
-        columns = max(
-            1,
-            min(3, int((available_width + 12) / (MIN_CARD_WIDTH + 12))),
-        )
-        for col in range(3):
-            scroll_frame.grid_columnconfigure(
-                col,
-                weight=1 if col < columns else 0,
-                uniform="cards" if col < columns else "",
-            )
-        for i, card in enumerate(container_cards):
-            card.grid(
-                row=i // columns,
-                column=i % columns,
-                sticky="nsew", padx=6, pady=6,
-            )
-        root.after_idle(
-            lambda: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-    def resize_content(event):
-        canvas.itemconfigure(
-            form["canvas_window"], width=event.width
-        )
-        arrange_containers(event.width)
-
-    scroll_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-    )
-    canvas.bind("<Configure>", resize_content)
-
-    # ---- Mouse wheel ----
-    def on_mousewheel(event):
-        if event.num == 4:
-            canvas.yview_scroll(-1, "units")
-        elif event.num == 5:
-            canvas.yview_scroll(1, "units")
-        elif event.delta:
-            canvas.yview_scroll(int(-event.delta / 120), "units")
-
-    def bind_wheel(widget):
-        widget.bind("<MouseWheel>", on_mousewheel)
-        widget.bind("<Button-4>", on_mousewheel)
-        widget.bind("<Button-5>", on_mousewheel)
-        for child in widget.winfo_children():
-            bind_wheel(child)
-
-    # ---- Graceful shutdown ----
-    def shutdown(_sig=None, _frame=None):
-        try:
-            gui_logic.stop_dictation()
-        except Exception:
-            pass
-        try:
-            root.destroy()
-        except Exception:
-            pass
-
-    root.protocol("WM_DELETE_WINDOW", shutdown)
-    try:
-        signal.signal(signal.SIGINT, shutdown)
-    except Exception:
-        # Signal handling can only be installed from the main thread;
-        # this is best-effort.
-        pass
-
-    # The following schedules a periodic no-op so Ctrl+C is
-    # delivered even while Tk's main loop is blocked.
-    def _tick():
-        try:
-            root.after(250, _tick)
-        except Exception:
-            pass
-
-    root.after(250, _tick)
-
-    root.update_idletasks()
-    arrange_containers(canvas.winfo_width())
-    bind_wheel(scroll_frame)
-
-    return root
-
-
-# ==================================================
-# RIGHT PANEL
-# ==================================================
-
-def _build_right_panel(root, inputs):
-    container = tk.Frame(
-        root, bg=WHITE,
-        highlightbackground=BORDER, highlightthickness=1,
-    )
-    container.place(
-        relx=1.0, rely=0.5,
-        relwidth=0.30, relheight=0.90,
-        x=-15, anchor="e",
+    # ---------------- Right panel (Output) ----------------
+    output_field = ft.TextField(
+        multiline=True,
+        read_only=True,
+        expand=True,
+        text_size=13,
+        text_style=ft.TextStyle(font_family="Consolas"),
+        border=ft.InputBorder.NONE,
+        filled=True,
+        fill_color=WHITE,
+        value=(
+            "Fill in the patient form on the left,\n"
+            "then click Submit (or press Enter).\n\n"
+            "Press Space to dictate fields by voice.\n"
+            "Press Space again to stop.\n\n"
+            "The output will show:\n"
+            "  - Traditional ML KTAS\n"
+            "  - NLP KTAS\n"
+            "  - Deep Learning KTAS\n"
+            "  - Combined KTAS and probabilities\n"
+            "  - Operational Priority\n"
+            "  - Peak / Non-peak status\n"
+            "  - Predicted doctor waiting time\n"
+            "  - Time-series demand forecast\n"
+            "  - Consistency check"
+        ),
     )
 
-    tk.Label(
-        container, text="Prediction Output",
-        font=("Segoe UI", 14, "bold"),
-        bg=WHITE, fg=TEXT,
-    ).pack(side="top", anchor="w", padx=12, pady=(12, 6))
-
-    # Bottom bar first (reserves space)
-    button_bar = tk.Frame(container, bg=WHITE)
-    button_bar.pack(side="bottom", fill="x", padx=10, pady=(4, 10))
-
-    # Voice status sits above the button row.
-    voice_status = tk.Label(
-        container, text="Space = voice dictation, Enter = submit",
-        font=("Segoe UI", 9), bg=WHITE, fg=MUTED,
-        wraplength=280, justify="left",
-    )
-    voice_status.pack(side="bottom", fill="x", padx=12, pady=(0, 4))
-
-    output_frame = tk.Frame(container, bg=WHITE)
-    output_frame.pack(side="top", fill="both", expand=True, padx=6, pady=4)
-
-    scroll = tk.Scrollbar(output_frame, orient="vertical")
-    scroll.pack(side="right", fill="y")
-
-    output_text = tk.Text(
-        output_frame,
-        wrap="word",
-        font=("Consolas", 10),
-        bg=WHITE, fg=TEXT,
-        relief="flat", bd=0,
-        padx=8, pady=8,
-        yscrollcommand=scroll.set,
-        state="disabled",
-    )
-    output_text.pack(side="left", fill="both", expand=True)
-    scroll.config(command=output_text.yview)
-
-    _set_output(
-        output_text,
-        "Fill in the patient form on the left,\n"
-        "then click Submit (or press Enter).\n\n"
-        "Press Space to dictate fields by voice.\n"
-        "Press Space again to stop.\n\n"
-        "The output will show:\n"
-        "  - Traditional ML KTAS\n"
-        "  - NLP KTAS\n"
-        "  - Deep Learning KTAS\n"
-        "  - Combined KTAS and probabilities\n"
-        "  - Operational Priority\n"
-        "  - Peak / Non-peak status\n"
-        "  - Predicted doctor waiting time\n"
-        "  - Time-series demand forecast\n"
-        "  - Consistency check",
+    voice_status = ft.Text(
+        "Space = voice dictation, Enter = submit",
+        size=11,
+        color=MUTED,
     )
 
-    submit_button = tk.Button(
-        button_bar,
-        text="Submit",
-        font=("Segoe UI", 10, "bold"),
-        bg=PRIMARY, fg=WHITE,
-        activebackground=PRIMARY_DARK, activeforeground=WHITE,
-        relief="flat", cursor="hand2",
-        padx=10, pady=9,
-    )
-    submit_button.pack(fill="x")
-
-    return {
-        "container": container,
-        "output_text": output_text,
-        "voice_status": voice_status,
-        "submit_button": submit_button,
-    }
-
-
-# ==================================================
-# FORM PANEL
-# ==================================================
-
-def _build_form_panel(root, inputs, container_cards):
-    content_area = tk.Frame(root, bg=BG)
-    content_area.place(
-        relx=0.0, rely=0.0,
-        relwidth=0.68, relheight=0.90,
-        x=12, y=12,
+    submit_button = ft.Button(
+        content="Submit",
+        bgcolor=PRIMARY,
+        color=WHITE,
+        style=ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=8),
+            padding=ft.Padding.symmetric(vertical=14, horizontal=10),
+            bgcolor={"": PRIMARY, "hovered": PRIMARY_DARK},
+        ),
+        width=float("inf"),
+        on_click=lambda e: page.run_task(
+            _on_submit_async, page, inputs, output_field, submit_button
+        ),
     )
 
-    canvas = tk.Canvas(
-        content_area, bg=BG,
-        highlightthickness=0, borderwidth=0,
+    right_panel = ft.Container(
+        content=ft.Column(
+            [
+                ft.Text("Prediction Output", size=18, weight=ft.FontWeight.BOLD, color=TEXT),
+                ft.Container(
+                    content=output_field,
+                    expand=True,
+                    bgcolor=WHITE,
+                    border=ft.Border.all(1, BORDER),
+                    border_radius=8,
+                    padding=8,
+                ),
+                voice_status,
+                submit_button,
+            ],
+            spacing=12,
+            expand=True,
+        ),
+        width=380,
+        padding=16,
+        bgcolor=WHITE,
+        border=ft.Border.all(1, BORDER),
+        border_radius=12,
     )
-    scrollbar = ttk.Scrollbar(
-        content_area, orient="vertical", command=canvas.yview
-    )
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
 
-    scroll_frame = tk.Frame(canvas, bg=BG)
-    canvas_window = canvas.create_window(
-        (0, 0), window=scroll_frame, anchor="nw"
-    )
-
+    # ---------------- Left panel (Form) ----------------
     options, err = gui_logic.safe_load_ktas_options()
     if err:
         print("WARNING loading KTAS options:", err)
 
-    # ---------- Demographics ----------
-    _, body = _create_card(
-        scroll_frame, container_cards,
-        "Demographics",
-        "Basic patient information used by all models.",
+    # Initialize controls
+    inputs["Group"] = ft.Dropdown(label="Group (1 or 2)", options=[ft.dropdown.Option("1"), ft.dropdown.Option("2")], value="1", dense=True)
+    inputs["Sex"] = ft.Dropdown(label="Sex (1=male, 2=female)", options=[ft.dropdown.Option("1"), ft.dropdown.Option("2")], value="1", dense=True)
+    inputs["Age"] = _number_field("Age", "30")
+
+    inputs["SBP"] = _number_field("Systolic BP (SBP)", "120")
+    inputs["DBP"] = _number_field("Diastolic BP (DBP)", "80")
+    inputs["HR"] = _number_field("Heart Rate (HR)", "75")
+    inputs["RR"] = _number_field("Respiratory Rate (RR)", "16")
+    inputs["BT"] = _number_field("Body Temperature (C)", "37")
+    inputs["Saturation"] = _number_field("Oxygen Saturation (%)", "98")
+
+    inputs["Arrival mode"] = _dropdown("Mode of Arrival", gui_logic.display_options_for("Arrival mode", options["Arrival mode"]))
+    inputs["Injury"] = _dropdown("Injury", gui_logic.display_options_for("Injury", options["Injury"]))
+    inputs["Mental"] = _dropdown("Mental Status", gui_logic.display_options_for("Mental", options["Mental"]))
+    inputs["Pain"] = _dropdown("Pain", gui_logic.display_options_for("Pain", options["Pain"]))
+    inputs["NRS_pain"] = _number_field("NRS Pain Score (0-10)", "0")
+
+    inputs["NumDoctors"] = ft.Dropdown(label="Number of Doctors", options=[ft.dropdown.Option(v) for v in ["1", "2", "3", "4"]], value="2", dense=True)
+    inputs["PeakLimit"] = ft.Dropdown(label="Peak Duration (mins)", options=[ft.dropdown.Option(v) for v in ["120", "240", "360"]], value="240", dense=True)
+    inputs["Patients number per hour"] = _number_field("Patients per Hour", "10")
+    inputs["TSHorizon"] = _number_field("Forecast Horizon (hrs)", "3")
+
+    inputs["Chief_complain"] = ft.TextField(
+        label="Chief Complaint",
+        multiline=True,
+        min_lines=3,
+        max_lines=5,
+        text_size=14,
+        border_color=BORDER,
+        focused_border_color=PRIMARY,
     )
 
-    inputs["Group"] = tk.StringVar(value="1")
-    _combobox(body, "Group (1 or 2)", inputs["Group"], ["1", "2"])
-
-    inputs["Sex"] = tk.StringVar(value="1")
-    _combobox(body, "Sex (1 = male, 2 = female)",
-              inputs["Sex"], ["1", "2"])
-
-    inputs["Age"] = tk.StringVar(value="30")
-    _spinbox(body, "Age", inputs["Age"], 0, 120)
-
-    # ---------- Vitals ----------
-    _, body = _create_card(
-        scroll_frame, container_cards,
-        "Vitals",
-        "Numeric measurements used by the ML and DL models.",
+    # Build manual 2-column layout using Rows and Columns
+    col1 = ft.Column(
+        controls=[
+            _card("Demographics", "Basic patient information.", [inputs["Group"], inputs["Sex"], inputs["Age"]]),
+            _card("Clinical Categories", "Categorical values.", [inputs["Arrival mode"], inputs["Injury"], inputs["Mental"], inputs["Pain"], inputs["NRS_pain"]]),
+        ],
+        spacing=16,
+        expand=True,
+    )
+    
+    col2 = ft.Column(
+        controls=[
+            _card("Vitals", "Numeric measurements.", [inputs["SBP"], inputs["DBP"], inputs["HR"], inputs["RR"], inputs["BT"], inputs["Saturation"]]),
+            _card("Operational Info", "Patient-flow parameters.", [inputs["NumDoctors"], inputs["PeakLimit"], inputs["Patients number per hour"], inputs["TSHorizon"]]),
+        ],
+        spacing=16,
+        expand=True,
     )
 
-    inputs["SBP"] = tk.StringVar(value="120")
-    _spinbox(body, "Systolic BP (SBP)", inputs["SBP"], 0, 300)
+    chief_complaint_card = _card("Chief Complaint", "Free-text reason (NLP model).", [inputs["Chief_complain"]])
 
-    inputs["DBP"] = tk.StringVar(value="80")
-    _spinbox(body, "Diastolic BP (DBP)", inputs["DBP"], 0, 200)
-
-    inputs["HR"] = tk.StringVar(value="75")
-    _spinbox(body, "Heart Rate (HR)", inputs["HR"], 0, 250)
-
-    inputs["RR"] = tk.StringVar(value="16")
-    _spinbox(body, "Respiratory Rate (RR)", inputs["RR"], 0, 80)
-
-    inputs["BT"] = tk.StringVar(value="37")
-    _spinbox(body, "Body Temperature (C)", inputs["BT"],
-             25, 45, step=0.1)
-
-    inputs["Saturation"] = tk.StringVar(value="98")
-    _spinbox(body, "Oxygen Saturation (%)",
-             inputs["Saturation"], 0, 100)
-
-    # ---------- Clinical Categories ----------
-    _, body = _create_card(
-        scroll_frame, container_cards,
-        "Clinical Categories",
-        "Categorical values loaded directly from the training dataset.",
+    form_container = ft.Column(
+        controls=[
+            ft.Row(
+                controls=[col1, col2],
+                spacing=16,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+            chief_complaint_card,
+        ],
+        spacing=16,
     )
 
-    arrival_display = gui_logic.display_options_for(
-        "Arrival mode", options["Arrival mode"]
-    )
-    injury_display = gui_logic.display_options_for(
-        "Injury", options["Injury"]
-    )
-    mental_display = gui_logic.display_options_for(
-        "Mental", options["Mental"]
-    )
-    pain_display = gui_logic.display_options_for(
-        "Pain", options["Pain"]
+    left_panel = ft.Container(
+        content=ft.Column([form_container], scroll=ft.ScrollMode.AUTO, expand=True),
+        expand=True,
+        padding=ft.Padding.only(right=8)
     )
 
-    inputs["Arrival mode"] = tk.StringVar(value=arrival_display[0])
-    _combobox(body, "Mode of Arrival",
-              inputs["Arrival mode"], arrival_display)
-
-    inputs["Injury"] = tk.StringVar(value=injury_display[0])
-    _combobox(body, "Injury", inputs["Injury"], injury_display)
-
-    inputs["Mental"] = tk.StringVar(value=mental_display[0])
-    _combobox(body, "Mental Status",
-              inputs["Mental"], mental_display)
-
-    inputs["Pain"] = tk.StringVar(value=pain_display[0])
-    _combobox(body, "Pain", inputs["Pain"], pain_display)
-
-    inputs["NRS_pain"] = tk.StringVar(value="0")
-    _spinbox(body, "NRS Pain Score (0-10)",
-             inputs["NRS_pain"], 0, 10, step=0.1)
-
-    # ---------- Chief Complaint ----------
-    _, body = _create_card(
-        scroll_frame, container_cards,
-        "Chief Complaint",
-        "Free-text reason for the visit (used by the NLP model).",
+    # ---------------- Assemble Page ----------------
+    page.add(
+        ft.Row(
+            [left_panel, right_panel],
+            expand=True,
+            spacing=16,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
     )
 
-    tk.Label(
-        body, text="Chief Complaint",
-        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
-    ).pack(anchor="w", pady=(0, 6))
+    # ---------------- Keyboard bindings ----------------
+    def on_keyboard(e: ft.KeyboardEvent):
+        focused = _find_focused_control(page)
+        typing = isinstance(focused, ft.TextField) and not focused.read_only
 
-    cc_text = tk.Text(
-        body, height=5, font=("Segoe UI", 10), wrap="word",
-        relief="solid", bd=1, highlightthickness=1,
-        highlightbackground=BORDER, highlightcolor=PRIMARY,
-        padx=8, pady=8,
-    )
-    cc_text.pack(fill="both", expand=True)
-    inputs["Chief_complain"] = cc_text
+        if e.key == " " and not typing:
+            _toggle_dictation(page, inputs, voice_status)
+        elif e.key == "Enter" and (not typing or focused is inputs.get("Chief_complain")):
+            page.run_task(_on_submit_async, page, inputs, output_field, submit_button)
 
-    # ---------- Operational ----------
-    _, body = _create_card(
-        scroll_frame, container_cards,
-        "Operational Information",
-        "Used by the patient-flow waiting-time model.",
-    )
+    page.on_keyboard_event = on_keyboard
 
-    inputs["NumDoctors"] = tk.StringVar(value="2")
-    _combobox(body, "Number of Available Doctors",
-              inputs["NumDoctors"], ["1", "2", "3", "4"])
+    def on_close(_e):
+        try: speech_logic.stop_dictation()
+        except Exception: pass
 
-    inputs["PeakLimit"] = tk.StringVar(value="240")
-    _combobox(body, "Peak Duration (minutes)",
-              inputs["PeakLimit"], ["120", "240", "360"])
-
-    inputs["Patients number per hour"] = tk.StringVar(value="10")
-    _spinbox(body, "Patients per Hour",
-             inputs["Patients number per hour"], 1, 200)
-
-    inputs["TSHorizon"] = tk.StringVar(value="3")
-    _spinbox(body, "Forecast Horizon (hours)",
-             inputs["TSHorizon"], 1, 12)
-
-    return {
-        "content_area": content_area,
-        "canvas": canvas,
-        "scroll_frame": scroll_frame,
-        "canvas_window": canvas_window,
-    }
+    page.on_close = on_close
 
 
 # ==================================================
 # WIDGET HELPERS
 # ==================================================
 
-def _create_card(parent, store, title, subtitle):
-    card = tk.Frame(
-        parent, bg=WHITE,
-        highlightbackground=BORDER, highlightthickness=1,
-        padx=16, pady=16,
+def _number_field(label: str, value: str) -> ft.TextField:
+    return ft.TextField(
+        label=label, value=value, keyboard_type=ft.KeyboardType.NUMBER, dense=True,
+        border_color=BORDER, focused_border_color=PRIMARY,
     )
-    store.append(card)
 
-    card.grid_columnconfigure(0, weight=1)
+def _dropdown(label: str, values: list) -> ft.Dropdown:
+    return ft.Dropdown(
+        label=label, options=[ft.dropdown.Option(v) for v in values],
+        value=values[0] if values else None, dense=True,
+        border_color=BORDER, focused_border_color=PRIMARY,
+    )
 
-    tk.Label(
-        card, text=title,
-        font=("Segoe UI", 14, "bold"),
-        bg=WHITE, fg=TEXT, anchor="w",
-    ).grid(row=0, column=0, sticky="ew", pady=(0, 4))
+def _card(title: str, subtitle: str, children: list) -> ft.Container:
+    return ft.Container(
+        content=ft.Column(
+            [
+                ft.Text(title, size=16, weight=ft.FontWeight.BOLD, color=TEXT),
+                ft.Text(subtitle, size=10, color=MUTED),
+                ft.Divider(height=1, color=BORDER),
+                *children,
+            ],
+            spacing=8,
+        ),
+        padding=16,
+        bgcolor=WHITE,
+        border=ft.Border.all(1, BORDER),
+        border_radius=10,
+    )
 
-    tk.Label(
-        card, text=subtitle,
-        font=("Segoe UI", 9),
-        bg=WHITE, fg=MUTED,
-        anchor="w", justify="left", wraplength=300,
-    ).grid(row=1, column=0, sticky="ew", pady=(0, 10))
-
-    body = tk.Frame(card, bg=WHITE)
-    body.grid(row=2, column=0, sticky="nsew")
-    card.grid_rowconfigure(2, weight=1)
-    return card, body
-
-
-def _spinbox(parent, label, var, from_, to, step=1):
-    tk.Label(
-        parent, text=label,
-        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
-    ).pack(anchor="w", pady=(0, 4))
-    tk.Spinbox(
-        parent, from_=from_, to=to, increment=step,
-        textvariable=var, font=("Segoe UI", 11),
-        relief="solid", bd=1, width=12,
-    ).pack(anchor="w", ipady=4, pady=(0, 10))
-
-
-def _combobox(parent, label, var, values):
-    tk.Label(
-        parent, text=label,
-        font=("Segoe UI", 9, "bold"), bg=WHITE, fg=TEXT,
-    ).pack(anchor="w", pady=(0, 4))
-    ttk.Combobox(
-        parent, textvariable=var, values=values,
-        state="readonly", font=("Segoe UI", 10),
-    ).pack(fill="x", ipady=4, pady=(0, 10))
-
-
-def _set_output(output_text, message):
-    output_text.configure(state="normal")
-    output_text.delete("1.0", "end")
-    output_text.insert("1.0", message)
-    output_text.configure(state="disabled")
-
+def _find_focused_control(page) -> object:
+    result = [None]
+    def walk(ctrl):
+        try:
+            if getattr(ctrl, "focused", False):
+                result[0] = ctrl
+                return
+            for child in getattr(ctrl, "controls", []) or []:
+                walk(child)
+            content = getattr(ctrl, "content", None)
+            if content is not None: walk(content)
+        except Exception: pass
+    walk(page)
+    return result[0]
 
 # ==================================================
 # ACTION HANDLERS
 # ==================================================
 
-def _collect_raw_values(inputs):
+def _collect_raw_values(inputs) -> dict:
     return {
-        "Group": inputs["Group"].get(),
-        "Sex": inputs["Sex"].get(),
-        "Age": inputs["Age"].get(),
-        "Patients number per hour":
-            inputs["Patients number per hour"].get(),
-        "Arrival mode": inputs["Arrival mode"].get(),
-        "Injury": inputs["Injury"].get(),
-        "Mental": inputs["Mental"].get(),
-        "Pain": inputs["Pain"].get(),
-        "NRS_pain": inputs["NRS_pain"].get(),
-        "SBP": inputs["SBP"].get(),
-        "DBP": inputs["DBP"].get(),
-        "HR": inputs["HR"].get(),
-        "RR": inputs["RR"].get(),
-        "BT": inputs["BT"].get(),
-        "Saturation": inputs["Saturation"].get(),
-        "Chief_complain":
-            inputs["Chief_complain"].get("1.0", "end-1c").strip(),
+        "Group": inputs["Group"].value,
+        "Sex": inputs["Sex"].value,
+        "Age": inputs["Age"].value,
+        "Patients number per hour": inputs["Patients number per hour"].value,
+        "Arrival mode": inputs["Arrival mode"].value,
+        "Injury": inputs["Injury"].value,
+        "Mental": inputs["Mental"].value,
+        "Pain": inputs["Pain"].value,
+        "NRS_pain": inputs["NRS_pain"].value,
+        "SBP": inputs["SBP"].value,
+        "DBP": inputs["DBP"].value,
+        "HR": inputs["HR"].value,
+        "RR": inputs["RR"].value,
+        "BT": inputs["BT"].value,
+        "Saturation": inputs["Saturation"].value,
+        "Chief_complain": (inputs["Chief_complain"].value or "").strip(),
     }
 
-
-def _on_submit(inputs, output_text, submit_button):
+async def _on_submit_async(page, inputs, output_field, submit_button):
     try:
-        patient_data = gui_logic.build_patient_data(
-            _collect_raw_values(inputs)
-        )
-    except (ValueError, tk.TclError) as e:
-        messagebox.showwarning(
-            "Invalid Input",
-            "Please check your inputs:\n" + str(e),
-        )
+        patient_data = gui_logic.build_patient_data(_collect_raw_values(inputs))
+    except (ValueError, TypeError) as e:
+        await _show_dialog(page, "Invalid Input", "Please check your inputs:\n" + str(e))
         return
 
     if not patient_data["Chief_complain"]:
-        messagebox.showwarning(
-            "Missing Complaint",
-            "Please enter the chief complaint.",
-        )
+        await _show_dialog(page, "Missing Complaint", "Please enter the chief complaint.")
         return
 
-    num_doctors = int(inputs["NumDoctors"].get())
-    peak_limit = int(inputs["PeakLimit"].get())
-    ts_horizon = int(inputs["TSHorizon"].get())
+    submit_button.disabled = True
+    output_field.value = "Running predictions...\nPlease wait."
+    page.update()
 
-    _set_output(output_text, "Running predictions...\nPlease wait.")
-    submit_button.configure(state="disabled")
-
-    def worker():
-        try:
-            results = gui_logic.run_full_pipeline(
-                patient_data,
-                num_doctors,
-                peak_limit,
-                ts_horizon=ts_horizon,
-            )
-            text = gui_logic.format_results(results)
-            output_text.after(0, lambda: _set_output(output_text, text))
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            msg = "ERROR during prediction:\n\n" + str(e) + "\n\n" + tb
-            output_text.after(0, lambda: _set_output(output_text, msg))
-        finally:
-            output_text.after(
-                0, lambda: submit_button.configure(state="normal")
-            )
-
-    threading.Thread(target=worker, daemon=True).start()
-
-
-def _apply_dictation_to_inputs(inputs, updates):
-    """
-    Write recognised fields back into the form widgets.
-    Must run on the main thread.
-    """
-    for key, value in updates.items():
-        widget = inputs.get(key)
-        if widget is None:
-            continue
-        try:
-            if key == "Chief_complain":
-                widget.delete("1.0", "end")
-                widget.insert("1.0", value)
-            else:
-                widget.set(value)
-        except Exception:
-            pass
-
-
-def _toggle_dictation(root, inputs, voice_status):
-    """
-    Start dictation if idle, stop it if active.
-    Called by the Space-bar handler.
-    """
-    if gui_logic.is_listening():
-        gui_logic.stop_dictation()
-        voice_status.configure(
-            text="Processing your dictation...", fg=MUTED
+    try:
+        results = await asyncio.to_thread(
+            gui_logic.run_full_pipeline,
+            patient_data,
+            int(inputs["NumDoctors"].value),
+            int(inputs["PeakLimit"].value),
+            ts_horizon=int(inputs["TSHorizon"].value),
         )
-        return
+        output_field.value = gui_logic.format_results(results)
+    except Exception as e:
+        import traceback
+        output_field.value = f"ERROR:\n{str(e)}\n\n{traceback.format_exc()}"
+    finally:
+        submit_button.disabled = False
+        page.update()
 
-    if not gui_logic.speech_available():
-        voice_status.configure(
-            text="Voice input unavailable (speech_recognition / mic missing).",
-            fg=MUTED,
-        )
-        return
-
-    voice_status.configure(
-        text="Listening. Speak now, press Space again to stop.",
-        fg=VOICE_ACTIVE,
+async def _show_dialog(page, title: str, body: str):
+    dlg = ft.AlertDialog(
+        title=ft.Text(title),
+        content=ft.Text(body),
+        actions=[ft.TextButton("OK", on_click=lambda e: page.pop_dialog())],
     )
+    page.show_dialog(dlg)
 
-    def on_transcript(transcript):
-        # Marshal to the GUI thread.
-        root.after(0, lambda t=transcript: _handle_transcript(
-            root, inputs, voice_status, t
-        ))
+def _toggle_dictation(page, inputs, voice_status):
+    if speech_logic.is_listening():
+        speech_logic.stop_dictation()
+        voice_status.value = "Processing..."
+        voice_status.color = MUTED
+        page.update()
+        return
 
-    def on_status(message):
-        root.after(0, lambda m=message: voice_status.configure(
-            text=m, fg=MUTED
-        ))
+    if not speech_logic.speech_available():
+        voice_status.value = "Voice unavailable."
+        voice_status.color = MUTED
+        page.update()
+        return
 
-    def on_error(message):
-        root.after(0, lambda m=message: voice_status.configure(
-            text="Voice error: " + m, fg=MUTED
-        ))
+    voice_status.value = "Listening..."
+    voice_status.color = VOICE_ACTIVE
+    page.update()
 
-    started = gui_logic.start_dictation(
-        on_transcript=on_transcript,
-        on_status=on_status,
-        on_error=on_error,
-    )
+    def on_transcript(t): page.run_task(_handle_transcript_async, page, inputs, voice_status, t)
+    def on_status(m): voice_status.value = m; voice_status.color = MUTED; page.update()
+    def on_error(m): voice_status.value = "Error: " + m; voice_status.color = MUTED; page.update()
 
-    if not started:
-        voice_status.configure(
-            text="Could not start dictation.", fg=MUTED
-        )
+    if not speech_logic.start_dictation(on_transcript=on_transcript, on_status=on_status, on_error=on_error):
+        voice_status.value = "Could not start."
+        voice_status.color = MUTED
+        page.update()
 
-
-def _handle_transcript(root, inputs, voice_status, transcript):
-    """
-    Parse a transcript and apply field updates to the form.
-    """
-    options, _err = gui_logic.safe_load_ktas_options()
-    updates = gui_logic.parse_dictation(transcript, options)
-
+async def _handle_transcript_async(page, inputs, voice_status, transcript):
+    options, _ = gui_logic.safe_load_ktas_options()
+    updates = speech_logic.parse_dictation(transcript, options)
     if not updates:
-        voice_status.configure(
-            text="Heard: \"" + transcript + "\" but no fields recognised.",
-            fg=MUTED,
-        )
-        return
-
-    _apply_dictation_to_inputs(inputs, updates)
-    fields = ", ".join(updates.keys())
-    voice_status.configure(
-        text="Updated " + str(len(updates))
-        + " field(s): " + fields,
-        fg=VOICE_IDLE,
-    )
-
-
-# ==================================================
-# DIRECT-RUN SUPPORT
-# ==================================================
+        voice_status.value = f'Heard "{transcript}" but no fields recognised.'
+        voice_status.color = MUTED
+    else:
+        for k, v in updates.items():
+            if k in inputs: inputs[k].value = v
+        voice_status.value = f"Updated {len(updates)} field(s)."
+        voice_status.color = VOICE_IDLE
+    page.update()
 
 if __name__ == "__main__":
-    window = create_window()
-    window.mainloop()
+    ft.run(main)

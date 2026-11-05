@@ -18,8 +18,8 @@ Behaviours:
     by clamping, NOT by wrapping modulo (which would collapse
     8am, 12pm, 4pm and 8pm all to 0). If none is given, the system
     clock is used.
-  * When the user does not mention doctor count or peak status,
-    the engine falls back to the most common values in the training
+  * When the user does not mention doctor count or peak status, the
+    engine falls back to the most common values in the training
     data and says so explicitly in the reply.
   * Follow-up turns ("just tell me how long i will wait",
     "what about the total time?") are recognised as waiting-time
@@ -34,10 +34,13 @@ Replies are phrased in natural language: the engine refers to
 'your description' rather than quoting the whole sentence, and uses
 prose rather than '=' / 'key:value' formatting.
 
-No Ollama, no cloud API. All prediction goes through pipeline.route().
+No generative LLM or cloud API is used for language understanding. Optional offline
+text-to-speech uses pyttsx3. All prediction goes through pipeline.route().
 """
 
 import re
+import sys
+from pathlib import Path
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -47,14 +50,29 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
+# Here I load optional offline text-to-speech support.
 try:
-    from pipeline import route
+    import pyttsx3
+    TTS_AVAILABLE = True
+except ImportError:
+    pyttsx3 = None
+    TTS_AVAILABLE = False
+
+try:
+    from .pipeline import route, WAIT_MODEL_PATH
     PIPELINE_AVAILABLE = True
     PIPELINE_IMPORT_ERROR = None
-except Exception as error:  # noqa: BLE001
-    route = None
-    PIPELINE_AVAILABLE = False
-    PIPELINE_IMPORT_ERROR = str(error)
+except ImportError:
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from pipeline import route, WAIT_MODEL_PATH
+        PIPELINE_AVAILABLE = True
+        PIPELINE_IMPORT_ERROR = None
+    except Exception as error:  # noqa: BLE001
+        route = None
+        WAIT_MODEL_PATH = None
+        PIPELINE_AVAILABLE = False
+        PIPELINE_IMPORT_ERROR = str(error)
 
 
 # ============================================================
@@ -385,11 +403,17 @@ def _join_naturally(items):
 
 class LocalLanguageEngine:
 
-    def __init__(self, confidence_threshold=0.40):
+    def __init__(self, confidence_threshold=0.40, speech_enabled=False):
         self.confidence_threshold = confidence_threshold
         self.intent_model = None
         self.last_patient_info = None
         self.last_prediction_target = None
+
+        # Here I initialise speech synthesis only if the user selected it first.
+        self.tts_engine = None
+        self.voice_enabled = False
+        if speech_enabled:
+            self._initialise_voice()
 
         if SKLEARN_AVAILABLE:
             sentences = []
@@ -562,12 +586,19 @@ class LocalLanguageEngine:
             )
 
         # Here I am choosing the arrival time: user-stated first,
-        # system clock otherwise.
+        # system clock otherwise. The import is done here rather than
+        # at the top of the file because main_menu pulls in the menu
+        # UI, which we do not want to import when this module is used
+        # purely as a library.
         if stated_arrival is not None:
             arrival_time = stated_arrival
             arrival_source = "the time you gave"
         else:
-            from main_menu import get_arrival_time_from_system_clock
+            try:
+                from .main_menu import get_arrival_time_from_system_clock
+            except ImportError:
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from main_menu import get_arrival_time_from_system_clock
             arrival_time = get_arrival_time_from_system_clock()
             arrival_source = "the current time"
 
@@ -655,9 +686,10 @@ class LocalLanguageEngine:
     @staticmethod
     def _load_defaults():
         """Here I am reading the training-data defaults from the model."""
+        if WAIT_MODEL_PATH is None:
+            return {}
         try:
             import joblib
-            from pipeline import WAIT_MODEL_PATH
             bundle = joblib.load(WAIT_MODEL_PATH)
             return bundle.get("defaults", {}) if isinstance(bundle, dict) else {}
         except Exception:  # noqa: BLE001
@@ -793,6 +825,44 @@ class LocalLanguageEngine:
         return "UNKNOWN"
 
     # ------------------------------------------------------------------
+    # Speech synthesis (text-to-speech)
+    # ------------------------------------------------------------------
+
+    def _initialise_voice(self):
+        """Here I initialise the offline text-to-speech engine when requested."""
+        if not TTS_AVAILABLE:
+            return False
+        try:
+            if self.tts_engine is None:
+                self.tts_engine = pyttsx3.init()
+                self.tts_engine.setProperty("rate", 175)
+            self.voice_enabled = True
+            return True
+        except Exception as error:  # noqa: BLE001
+            print(f"Speech synthesis could not start: {error}")
+            self.tts_engine = None
+            self.voice_enabled = False
+            return False
+
+    def set_voice(self, enabled):
+        """Here I enable or disable spoken responses when TTS is available."""
+        if enabled:
+            return self._initialise_voice()
+        self.voice_enabled = False
+        return True
+
+    def speak(self, text):
+        """Here I read an assistant response aloud using offline TTS."""
+        if not self.voice_enabled or self.tts_engine is None or not text:
+            return
+        try:
+            self.tts_engine.say(str(text))
+            self.tts_engine.runAndWait()
+        except Exception as error:  # noqa: BLE001
+            print(f"Speech synthesis error: {error}")
+            self.voice_enabled = False
+
+    # ------------------------------------------------------------------
     # Public responder
     # ------------------------------------------------------------------
 
@@ -860,9 +930,28 @@ class LocalLanguageEngine:
 # ============================================================
 
 def main():
-    assistant = LocalLanguageEngine()
-
+    # Here I ask for the output mode before starting the language engine.
     print("=" * 60)
+    print("Predict-Care AI — Choose Response Output")
+    print("1. Speech synthesis (spoken and printed responses)")
+    print("2. Text only (no spoken responses)")
+    print("=" * 60)
+    while True:
+        try:
+            output_choice = input("Choose 1 or 2: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nStartup cancelled.")
+            return
+        if output_choice in ("1", "2"):
+            break
+        print("Please enter 1 for speech synthesis or 2 for text only.")
+
+    speech_requested = output_choice == "1"
+    assistant = LocalLanguageEngine(speech_enabled=speech_requested)
+    if speech_requested and not assistant.voice_enabled:
+        print("Speech synthesis is unavailable. Continuing in text-only mode.")
+
+    print("\n" + "=" * 60)
     print("Predict-Care AI — Local Language Engine")
     print("No Ollama or cloud model required.")
     print("Intent classifier:",
@@ -870,7 +959,9 @@ def main():
           else "rules only")
     print("Unified pipeline:",
           "available" if PIPELINE_AVAILABLE else "NOT loaded")
-    print("Type /help for commands or /quit to exit.")
+    print("Response output:",
+          "speech synthesis" if assistant.voice_enabled else "text only")
+    print("Type /help for commands, /voice on, /voice off, or /quit to exit.")
     print("=" * 60)
 
     while True:
@@ -884,8 +975,20 @@ def main():
             print("Assistant: Please enter a message.")
             continue
 
-        response, should_exit = assistant.respond(user_text)
+        # Here I let the user control whether assistant replies are spoken.
+        command = user_text.lower().strip()
+        if command in ("/voice on", "/voice off"):
+            enable_voice = command.endswith("on")
+            if assistant.set_voice(enable_voice):
+                response = "Voice responses enabled." if enable_voice else "Voice responses disabled."
+            else:
+                response = "Speech synthesis is unavailable. Install pyttsx3 and check your system audio."
+            should_exit = False
+        else:
+            response, should_exit = assistant.respond(user_text)
+
         print(f"\nAssistant: {response}")
+        assistant.speak(response)
 
         if should_exit:
             break
