@@ -9,3 +9,4 @@ statsmodels
 openpyxl
 matplotlib
 keras
+torch
