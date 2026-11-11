@@ -26,15 +26,27 @@ except ImportError:
 # Connect to the existing KTAS prediction pipeline.
 # The language engine remains available even if the pipeline cannot be loaded.
 try:
-    from pipeline import predict_ktas
+    # Here I import the triage function through the NLP package when this
+    # engine is loaded by the Flet GUI.
+    from .pipeline import predict_ktas
 
     TRIAGE_MODEL_AVAILABLE = True
     TRIAGE_IMPORT_ERROR = None
 
-except Exception as error:
-    predict_ktas = None
-    TRIAGE_MODEL_AVAILABLE = False
-    TRIAGE_IMPORT_ERROR = str(error)
+except Exception as package_error:
+    try:
+        # Compatibility fallback for running this file directly from NLP/.
+        from pipeline import predict_ktas
+
+        TRIAGE_MODEL_AVAILABLE = True
+        TRIAGE_IMPORT_ERROR = None
+    except Exception as direct_error:
+        predict_ktas = None
+        TRIAGE_MODEL_AVAILABLE = False
+        TRIAGE_IMPORT_ERROR = (
+            f"Package import failed: {package_error}; "
+            f"direct import failed: {direct_error}"
+        )
 
 
 # Training examples for the eight supported conversational intents.

@@ -9,34 +9,52 @@ Includes:
   4. Integrated Test
 
 Run with:
-    flet run nlp/nlp_gui.py
+    python -m NLP.nlp_gui
 """
 
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import os
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import asyncio
+import re
+import sys
 import threading
-import time
-import flet as ft
+import warnings
 from datetime import datetime
+from pathlib import Path
+
+import flet as ft
 import speech_recognition as sr
 
-# Import your existing backend logic
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# Here I resolve the project root from this file, rather than relying on
+# whichever directory PowerShell happens to be using when the GUI starts.
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+os.chdir(PROJECT_DIR)
+
+# Import the backend modules as members of the NLP package. This prevents
+# Python from looking for pipeline.py in the project root by mistake.
 try:
-    from pipeline import route
-    from waiting_time_nlp import understand_waiting_time_request, get_clarification_message
-    from local_language_engine_expanded import LocalLanguageEngine
-    
-    # Import the newly moved chatbot logic
+    from NLP.pipeline import route
+    from NLP.waiting_time_nlp import (
+        understand_waiting_time_request,
+        get_clarification_message,
+    )
+    from NLP.local_language_engine_expanded import LocalLanguageEngine
     from NLP import chatbot
-    # Import the GUI logic to reuse its display formatting
     from GUI import gui_logic
-except ImportError as e:
-    print("Warning: Could not import backend modules. Ensure you run from project root.", e)
+except ImportError as import_error:
+    raise ImportError(
+        "Predict-Care AI could not load its backend modules. Check that "
+        "NLP/pipeline.py, NLP/waiting_time_nlp.py, "
+        "NLP/local_language_engine_expanded.py, NLP/chatbot.py and "
+        "GUI/gui_logic.py exist in the project. Original error: "
+        f"{import_error}"
+    ) from import_error
+
 
 # ==================================================
 # COLORS & STYLES
@@ -421,21 +439,48 @@ def main(page: ft.Page):
     # VIEW: AI CHAT ASSISTANT
     # ==================================================
     def show_chat_view():
+        """Conversational assistant with session context and live wait predictions."""
         active_hooks["space"] = None
         page.controls.clear()
 
         chat_list = ft.ListView(expand=True, spacing=10, auto_scroll=True)
-        input_field = ft.TextField(hint_text="Type a message...", expand=True, on_submit=lambda e: send_msg())
+        input_field = ft.TextField(
+            hint_text="Type or use the microphone...", expand=True,
+            on_submit=lambda e: send_msg()
+        )
+        # Voice controls belong only to the AI Assistant view.
+        voice_state = {"listening": False, "speech_enabled": False}
+        chat_recognizer = sr.Recognizer()
+        mic_status = ft.Text("", size=12, color=MUTED)
+        mic_btn = ft.IconButton(
+            icon=ft.Icons.MIC, tooltip="Speak a message",
+            icon_color=WHITE, bgcolor=PRIMARY, width=48, height=48
+        )
+        speaker_btn = ft.IconButton(
+            icon=ft.Icons.VOLUME_OFF, tooltip="Enable spoken responses",
+            icon_color=PRIMARY, width=48, height=48
+        )
+
+        # Here I keep recent turns and the most recent waiting-time inputs for
+        # follow-up messages such as "yes", "what about one doctor?", or "and off peak?".
+        conversation = []
+        wait_context = {
+            "Priority": 2,
+            "ArrivalTime": get_arrival_time_from_system_clock(),
+            "NumDoctors": 2,
+            "IsPeakArrival": 0,
+        }
+        last_assistant_message = {"text": ""}
+        busy = {"value": False}
 
         def add_msg(text, is_user=False):
             bg = PRIMARY if is_user else WHITE
             color = WHITE if is_user else TEXT
             align = ft.MainAxisAlignment.END if is_user else ft.MainAxisAlignment.START
-            
             chat_list.controls.append(
                 ft.Row([
                     ft.Container(
-                        content=ft.Text(text, color=color, size=14),
+                        content=ft.Text(str(text), color=color, size=14, selectable=True),
                         padding=12,
                         bgcolor=bg,
                         border_radius=ft.BorderRadius(8, 8, 0 if is_user else 8, 8 if is_user else 0),
@@ -445,33 +490,276 @@ def main(page: ft.Page):
             )
             page.update()
 
-        def send_msg():
-            text = input_field.value.strip()
-            if not text: return
+        def is_waiting_question(text):
+            normalized = text.lower()
+            return any(term in normalized for term in (
+                "wait", "waiting time", "how long", "peak", "off peak", "off-peak",
+                "doctor", "priority level", "hospital time", "queue", "arrive at",
+                "what about one", "what if there are", "what if i come"
+            ))
+
+        def update_wait_context(text):
+            """Update only the values explicitly mentioned; keep previous values otherwise."""
+            msg = text.lower()
+            found_any = False
+
+            # Priority: accept "priority 2", "priority level 2", or "level 2" in a wait context.
+            m = re.search(r"\bpriority(?:\s+level)?\s*(?:of\s*)?(1|2|3)\b", msg)
+            if m:
+                wait_context["Priority"] = int(m.group(1)); found_any = True
+            elif is_waiting_question(msg):
+                m = re.search(r"\blevel\s*(1|2|3)\b", msg)
+                if m:
+                    wait_context["Priority"] = int(m.group(1)); found_any = True
+
+            m = re.search(r"\b(\d{1,3})\s*(?:doctors?|physicians?)\b", msg)
+            if m:
+                wait_context["NumDoctors"] = max(1, min(100, int(m.group(1)))); found_any = True
+            else:
+                m = re.search(r"\b(?:with|using|have)\s+(?:only\s+)?(\d{1,2})\s+(?:available\s+)?(?:doctor|physician)", msg)
+                if m:
+                    wait_context["NumDoctors"] = max(1, min(100, int(m.group(1)))); found_any = True
+                elif re.search(r"\b(one|a single) doctor\b", msg):
+                    wait_context["NumDoctors"] = 1; found_any = True
+                elif re.search(r"\btwo doctors\b", msg):
+                    wait_context["NumDoctors"] = 2; found_any = True
+
+            m = re.search(r"\b(?:at|time(?:\s+is)?|arrive(?:\s+at)?)\s*(\d{1,3})\b", msg)
+            if m and ("peak" in msg or "arriv" in msg or "wait" in msg):
+                wait_context["ArrivalTime"] = max(0, min(239, int(m.group(1)))); found_any = True
+            else:
+                m = re.search(r"\b(\d{1,3})\s*(?:minutes?|mins?)\s*(?:into|after)\b", msg)
+                if m:
+                    wait_context["ArrivalTime"] = max(0, min(239, int(m.group(1)))); found_any = True
+
+            if any(term in msg for term in ("off peak", "off-peak", "not peak", "outside peak", "non peak", "non-peak")):
+                wait_context["IsPeakArrival"] = 0; found_any = True
+            elif "peak" in msg:
+                # Avoid interpreting "not peak" as peak (handled above).
+                if not any(term in msg for term in ("off peak", "off-peak", "not peak", "non-peak", "non peak")):
+                    wait_context["IsPeakArrival"] = 1; found_any = True
+
+            return found_any
+
+        def perform_wait_prediction(text):
+            """Call the trained regression models through the shared NLP pipeline."""
+            update_wait_context(text)
+            request_text = text
+            intent = understand_waiting_time_request(request_text)
+            if intent not in ("doctor", "total", "both"):
+                # Natural follow-ups can be terse; preserve the previous prediction type.
+                intent = "both"
+            info = dict(wait_context)
+            result = route(intent, patient_info=info)
+            if result.get("type") == "error":
+                return (
+                    "I understood the waiting-time question, but the prediction pipeline returned an error. "
+                    "No estimate has been invented.\n\n" + result.get("message", "Unknown prediction error")
+                )
+            if result.get("needs_clarification"):
+                return result.get("message", "Would you like doctor waiting time, total hospital time, or both?")
+
+            parts = ["Waiting-time estimate from the trained model:"]
+            if "doctor_minutes" in result:
+                parts.append(f"• Doctor wait: {result['doctor_minutes']:.1f} minutes")
+            if "total_minutes" in result:
+                parts.append(f"• Total hospital time: {result['total_minutes']:.1f} minutes")
+            parts.append(
+                "\nInputs used: priority level {Priority}, arrival minute {ArrivalTime}/240, "
+                "{NumDoctors} doctor(s), {peak}.".format(
+                    **info, peak="peak arrivals" if info["IsPeakArrival"] else "off-peak arrivals"
+                )
+            )
+            parts.append("This is a model estimate for decision support, not a guarantee of actual waiting time.")
+            return "\n".join(parts)
+
+        def answer_message(text):
+            msg = text.strip()
+            normalized = re.sub(r"[^a-z0-9 ]", "", msg.lower()).strip()
+
+            if normalized in ("/reset", "reset conversation", "start over", "clear context"):
+                conversation.clear()
+                wait_context.update({
+                    "Priority": 2,
+                    "ArrivalTime": get_arrival_time_from_system_clock(),
+                    "NumDoctors": 2,
+                    "IsPeakArrival": 0,
+                })
+                return "Conversation context has been reset. What would you like to know?"
+
+            # If a user answers "yes" to an immediately preceding assistant question,
+            # carry that confirmation forward instead of classifying it as an unrelated intent.
+            if normalized in ("yes", "yeah", "yep", "correct", "thats right", "yes please"):
+                previous = last_assistant_message["text"].lower()
+                if "doctor waiting time, total hospital time, or both" in previous:
+                    return perform_wait_prediction("both waiting time")
+                if "waiting-time estimate from the trained model" in previous or "inputs used:" in previous:
+                    return perform_wait_prediction("both waiting time")
+                if "would you like" in previous or previous.rstrip().endswith("?"):
+                    return "Thanks — I’ll use that confirmation for the question we were discussing. Please add the detail you want me to apply, such as the number of doctors or whether it is peak time."
+
+            if normalized in ("no", "nope", "not really") and last_assistant_message["text"].endswith("?"):
+                return "Okay. Tell me what you would prefer, and I’ll update the request."
+
+            if normalized in ("why", "why is that", "explain that", "what do you mean", "can you explain", "tell me more"):
+                previous = last_assistant_message["text"].strip()
+                if previous:
+                    return (
+                        "You’re asking about my previous response. It was: \"" + previous + "\"\n\n"
+                        "I can explain the model inputs and limitations, or refine the estimate if you change a value."
+                    )
+
+            if is_waiting_question(msg) or (conversation and conversation[-1]["kind"] == "waiting" and any(
+                term in normalized for term in ("what about", "instead", "and if", "how about", "one doctor", "two doctors", "peak", "off peak", "same but")
+            )):
+                return perform_wait_prediction(msg)
+
+            if engine is None:
+                return "The local language engine did not load. Please check the startup error in the terminal."
+            response, should_exit = engine.respond(msg)
+            if should_exit:
+                return response
+            return response
+
+        def speak_response(text):
+            """Speak assistant replies only when the speaker toggle is enabled."""
+            if not voice_state["speech_enabled"] or not text:
+                return
+            try:
+                import pyttsx3
+                speaker = pyttsx3.init()
+                speaker.setProperty("rate", 175)
+                speaker.say(text)
+                speaker.runAndWait()
+                speaker.stop()
+            except Exception as ex:
+                mic_status.value = f"Speech output unavailable: {ex}. Install pyttsx3."
+                mic_status.color = ERROR
+                page.update()
+
+        def toggle_speaker(e=None):
+            voice_state["speech_enabled"] = not voice_state["speech_enabled"]
+            speaker_btn.icon = (
+                ft.Icons.VOLUME_UP if voice_state["speech_enabled"]
+                else ft.Icons.VOLUME_OFF
+            )
+            speaker_btn.tooltip = (
+                "Disable spoken responses" if voice_state["speech_enabled"]
+                else "Enable spoken responses"
+            )
+            mic_status.value = (
+                "Spoken responses enabled." if voice_state["speech_enabled"]
+                else "Spoken responses disabled."
+            )
+            mic_status.color = SUCCESS if voice_state["speech_enabled"] else MUTED
+            page.update()
+
+        def toggle_chat_mic(e=None):
+            if voice_state["listening"]:
+                return
+            voice_state["listening"] = True
+            mic_btn.disabled = True
+            mic_btn.icon = ft.Icons.MIC
+            mic_status.value = "Listening — speak after the microphone opens..."
+            mic_status.color = MUTED
+            page.update()
+
+            def listen_worker():
+                try:
+                    # Prefer the default microphone. This avoids relying on a
+                    # hard-coded device index that differs between computers.
+                    with sr.Microphone() as source:
+                        chat_recognizer.adjust_for_ambient_noise(source, duration=0.35)
+                        audio = chat_recognizer.listen(
+                            source, timeout=6, phrase_time_limit=15
+                        )
+                    heard = chat_recognizer.recognize_google(audio, language="en-ZA")
+                    input_field.value = heard
+                    mic_status.value = f"Recognised: {heard}"
+                    mic_status.color = SUCCESS
+                    page.update()
+                    send_msg()
+                except sr.WaitTimeoutError:
+                    mic_status.value = "No speech detected. Click the microphone and try again."
+                    mic_status.color = ERROR
+                    page.update()
+                except sr.UnknownValueError:
+                    mic_status.value = "I could not understand that audio. Please try again."
+                    mic_status.color = ERROR
+                    page.update()
+                except sr.RequestError as ex:
+                    mic_status.value = f"Speech recognition service error: {ex}"
+                    mic_status.color = ERROR
+                    page.update()
+                except Exception as ex:
+                    mic_status.value = f"Microphone error: {ex}"
+                    mic_status.color = ERROR
+                    page.update()
+                finally:
+                    voice_state["listening"] = False
+                    mic_btn.disabled = False
+                    mic_btn.icon = ft.Icons.MIC
+                    page.update()
+
+            threading.Thread(target=listen_worker, daemon=True).start()
+
+        mic_btn.on_click = toggle_chat_mic
+        speaker_btn.on_click = toggle_speaker
+
+        def send_msg(e=None):
+            if busy["value"]:
+                return
+            text = (input_field.value or "").strip()
+            if not text:
+                return
             input_field.value = ""
             add_msg(text, is_user=True)
-            if engine is None:
-                add_msg("System Error: Language engine not loaded.")
-                return
+            conversation.append({"role": "user", "text": text, "kind": "waiting" if is_waiting_question(text) else "general"})
+            conversation[:] = conversation[-12:]
+            busy["value"] = True
+
             def worker():
                 try:
-                    response, _ = engine.respond(text)
+                    response = answer_message(text)
+                    last_assistant_message["text"] = response
+                    conversation.append({"role": "assistant", "text": response, "kind": "assistant"})
+                    conversation[:] = conversation[-12:]
                     add_msg(response, is_user=False)
+                    speak_response(response)
                 except Exception as ex:
-                    add_msg(f"Error: {ex}", is_user=False)
+                    response = f"I couldn't complete that request. No estimate was invented.\nError: {type(ex).__name__}: {ex}"
+                    last_assistant_message["text"] = response
+                    add_msg(response, is_user=False)
+                    speak_response(response)
+                finally:
+                    busy["value"] = False
+
             threading.Thread(target=worker, daemon=True).start()
 
-        add_msg("Hello! I am the Predict-Care AI local assistant. Type /help to see what I can do.")
+        add_msg(
+            "Hello! I am the Predict-Care AI local assistant. I can predict doctor waiting time and total hospital time using the trained model. "
+            "Try: ‘How long will I wait at peak, arrival minute 120, priority level 2, with 2 doctors?’ "
+            "I keep the current conversation context for follow-up questions. Type /help for supported commands or /reset to start a new topic."
+        )
 
         page.add(
             ft.Column([
                 ft.Row([
                     ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=show_home),
-                    ft.Text("AI Assistant", size=24, weight=ft.FontWeight.BOLD)
+                    ft.Text("AI Assistant", size=24, weight=ft.FontWeight.BOLD, color=TEXT)
                 ]),
                 ft.Container(height=10),
                 ft.Container(content=chat_list, expand=True, bgcolor=BG, padding=10, border=ft.Border.all(1, BORDER), border_radius=10),
-                ft.Row([input_field, ft.IconButton(icon=ft.Icons.SEND, bgcolor=PRIMARY, icon_color=WHITE, on_click=lambda e: send_msg())])
+                ft.Row([
+                    input_field,
+                    mic_btn,
+                    speaker_btn,
+                    ft.IconButton(
+                        icon=ft.Icons.SEND, tooltip="Send message",
+                        bgcolor=PRIMARY, icon_color=WHITE, on_click=send_msg
+                    )
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                mic_status
             ], expand=True)
         )
         page.update()

@@ -26,7 +26,7 @@ from healthcare_ai import (
 )
 
 # Changed from NLP.pipeline to pipeline since we are now inside NLP/
-from pipeline import predict_ktas_proba as predict_nlp_proba
+from NLP.pipeline import predict_ktas_proba as predict_nlp_proba
 
 from deep_learning import (
     load_deep_learning_model,
@@ -71,7 +71,11 @@ def load_ktas_options():
 def run_traditional_prediction(patient_data):
     pkg = load_triage_model()
     model = pkg["model"]
-    pre = pkg.get("preprocessor", pkg["scaler"])
+    pre = pkg.get("preprocessor")
+    if pre is None:
+        pre = pkg.get("scaler")
+    if pre is None:
+        raise KeyError("Saved triage model package has no preprocessor or scaler.")
     feat_cols = pkg["feature_columns"]
 
     missing = [c for c in feat_cols if c not in patient_data]
